@@ -5,10 +5,10 @@ set -euo pipefail
 : "${XBPS_TARGET_ARCH:=x86_64}"
 : "${XBPS_ALLOW_RESTRICTED:=no}"
 
-# GitHub runners can block unprivileged uid_map writes used by xbps-uunshare.
-# Force a CI-safe chroot method when running in Actions unless overridden.
+# GitHub runners can block uid_map writes used by uunshare/bwrap.
+# Use xbps-uchroot in CI unless explicitly overridden.
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-	: "${XBPS_CHROOT_CMD:=bwrap}"
+	: "${XBPS_CHROOT_CMD:=uchroot}"
 	: "${XBPS_BUILD_ENVIRONMENT:=void-packages-ci}"
 	echo "[ci-build] Using XBPS_CHROOT_CMD=$XBPS_CHROOT_CMD"
 fi

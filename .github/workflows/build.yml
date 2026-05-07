@@ -37,9 +37,19 @@ jobs:
       - name: Install xbps tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd bubblewrap
+          sudo apt-get install -y -qq zstd
           curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
             | sudo tar xJ -C / --strip-components=1
+
+      - name: Configure xbps-uchroot for CI
+        run: |
+          UCHROOT_BIN="$(command -v xbps-uchroot)"
+          if [ -z "$UCHROOT_BIN" ]; then
+            echo "xbps-uchroot not found"
+            exit 1
+          fi
+          sudo chown root:root "$UCHROOT_BIN"
+          sudo chmod 4755 "$UCHROOT_BIN"
 
       - name: Clone upstream void-packages
         run: git clone --depth=1 https://github.com/void-linux/void-packages.git
