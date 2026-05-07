@@ -126,31 +126,14 @@ jobs:
           git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
           git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
 
-      # 8. Determine which packages changed
+      # 8. Determine which packages to build
       - name: Detect changed packages
         id: changed-packages
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.packages }}" ]; then
-            # Manual build: use specified packages
             PACKAGES="${{ inputs.packages }}"
           else
-            # Automatic build: detect changed packages
-            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-              # First push on a branch — build everything
-              PACKAGES="ALL"
-            else
-              # Detect packages changed since last push
-              # Fetch the before SHA to ensure it's available for diff
-              git fetch --depth=1 origin "${{ github.event.before }}" 2>/dev/null || true
-              CHANGED=$(git diff --name-only "${{ github.event.before }}"...HEAD -- pkgs/ | \
-                grep '^pkgs/' | cut -d/ -f2 | sort -u || true)
-              if [ -z "$CHANGED" ]; then
-                echo "No package templates changed."
-                echo "should_build=false" >> $GITHUB_OUTPUT
-                exit 0
-              fi
-              PACKAGES="$CHANGED"
-            fi
+            PACKAGES="ALL"
           fi
           echo "should_build=true" >> $GITHUB_OUTPUT
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
