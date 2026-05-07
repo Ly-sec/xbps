@@ -80,18 +80,19 @@ if [ -n "$PRIVKEY" ]; then
 	fi
 fi
 
-# Build the signing command
-CMD="xbps-rindex --sign --signedby \"$SIGNEDBY\""
+# Build the signing command without eval so signedby values like
+# "Name <mail@example.com>" are passed safely.
+sign_cmd=(xbps-rindex --sign --signedby "$SIGNEDBY")
 if [ -n "$KEY_ARG" ]; then
-	CMD="$CMD $KEY_ARG"
+	sign_cmd+=(--privkey "${KEY_ARG#--privkey }")
 fi
 # --pubkey flag removed: xbps-rindex --sign does not support it.
 # The public key is automatically embedded and derived from the private key.
 # Copy keys/pub.pem manually for distribution to clients.
-CMD="$CMD $REPO_DIR"
+sign_cmd+=("$REPO_DIR")
 
 echo "[sign] Signing repository as \"$SIGNEDBY\"..."
-eval "$CMD"
+"${sign_cmd[@]}"
 
 echo "[sign] Repository signed successfully."
 
@@ -100,7 +101,7 @@ echo "[sign] Signing individual packages..."
 if [ -n "$KEY_ARG" ]; then
 	for pkg in "$REPO_DIR"/*.xbps; do
 		[ -f "$pkg" ] || continue
-		xbps-rindex --sign-pkg --signedby "$SIGNEDBY" $KEY_ARG "$pkg" 2>/dev/null || true
+		xbps-rindex --sign-pkg --signedby "$SIGNEDBY" --privkey "${KEY_ARG#--privkey }" "$pkg" 2>/dev/null || true
 	done
 fi
 
