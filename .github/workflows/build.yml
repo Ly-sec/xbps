@@ -49,18 +49,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: voidlinux/voidlinux
-      options: --user root
+      image: ghcr.io/void-linux/void-glibc-full:latest
+      options: --user root --privileged
+      volumes:
+        - /dev:/dev
     timeout-minutes: 120
 
     steps:
-      # 1. Check out this overlay repo with full history for change detection
+      # 1. Prepare container: update xbps and install required tools
+      - name: Prepare container
+        run: |
+          xbps-install -Syu xbps && xbps-install -yu
+          xbps-install -y git curl gh jq
+
+      # 2. Check out this overlay repo with full history for change detection
       - name: Checkout overlay repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Restore cached upstream void-packages clone
+      # 3. Restore cached upstream void-packages clone
       #    Cache key is based on the date so it refreshes weekly.
       #    The restore-keys fallback allows reuse across pushes.
       - name: Cache upstream void-packages
@@ -72,13 +80,13 @@ jobs:
           restore-keys: |
             void-packages-${{ env.UPSTREAM_BRANCH }}-
 
-      # 3. Clone upstream if cache miss
+      # 4. Clone upstream if cache miss
       - name: Clone upstream void-packages
         if: steps.cache-void-packages.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
 
-      # 4. Restore cached bootstrap masterdir
+      # 5. Restore cached bootstrap masterdir
       - name: Cache bootstrap masterdir
         id: cache-bootstrap
         uses: actions/cache@v4
@@ -88,7 +96,7 @@ jobs:
           restore-keys: |
             bootstrap-${{ env.XBPS_TARGET_ARCH }}-
 
-      # 5. Bootstrap if needed
+      # 6. Bootstrap if needed
       - name: Bootstrap build environment
         if: steps.cache-bootstrap.outputs.cache-hit != 'true'
         run: |
@@ -137,12 +145,12 @@ jobs:
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
           echo "Packages to build: $PACKAGES"
 
-      # 8. Overlay custom templates
+      # 9. Overlay custom templates
       - name: Overlay custom templates
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/overlay-packages.sh
 
-      # 9. Build all changed packages
+      # 10. Build all changed packages
       - name: Build packages
         if: steps.changed-packages.outputs.should_build == 'true'
         run: |
@@ -157,7 +165,7 @@ jobs:
         env:
           XBPS_MAKEJOBS: $(nproc)
 
-      # 10. Sign the repository index
+      # 11. Sign the repository index
       - name: Sign repository
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/sign-repo.sh
@@ -166,7 +174,7 @@ jobs:
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
-      # 11. Publish to GitHub Releases
+      # 12. Publish to GitHub Releases
       - name: Publish release
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/publish.sh
