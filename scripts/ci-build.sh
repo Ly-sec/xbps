@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# ci-build.sh — Full CI build pipeline (run as non-root user)
+# ci-build.sh — Full CI build pipeline (run from repo root)
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
 
 # Clone upstream if needed
 if [ ! -d void-packages/.git ]; then
