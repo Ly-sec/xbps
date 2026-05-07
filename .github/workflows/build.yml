@@ -105,9 +105,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: void-packages/hostdir
-          key: bootstrap-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/.git/HEAD') }}
+          key: bootstrap-native-${{ hashFiles('void-packages/.git/HEAD') }}
           restore-keys: |
-            bootstrap-${{ env.XBPS_TARGET_ARCH }}-
+            bootstrap-native-
 
       # 8. Bootstrap if needed
       - name: Bootstrap build environment
@@ -116,8 +116,9 @@ jobs:
           sudo -Eu builder bash scripts/setup.sh --clone-only
           sudo -Eu builder bash scripts/overlay-packages.sh
           # Run bootstrap with retry for network flakiness
+          # Use native bootstrap (no -a flag) for x86_64 to match build.sh behavior
           for i in 1 2 3; do
-            sudo -Eu builder ./void-packages/xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
+            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap && break
             echo "Bootstrap attempt $i failed, retrying..."
             sleep 5
           done
