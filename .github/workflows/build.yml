@@ -48,6 +48,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: voidlinux/voidlinux
+      options: --user root
     timeout-minutes: 120
 
     steps:
@@ -93,21 +96,20 @@ jobs:
           bash scripts/overlay-packages.sh
           # Run bootstrap with retry for network flakiness
           for i in 1 2 3; do
-            cd void-packages && ./xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
+            ./void-packages/xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
             echo "Bootstrap attempt $i failed, retrying..."
             sleep 5
           done
-          mkdir -p hostdir
+          mkdir -p void-packages/hostdir
           touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
 
-      # 6. Ensure upstream is up-to-date even on cache hit
+      # 7. Ensure upstream is up-to-date even on cache hit
       - name: Update upstream clone
         run: |
-          cd void-packages
-          git fetch --depth=1 origin "$UPSTREAM_BRANCH"
-          git reset --hard origin/"$UPSTREAM_BRANCH"
+          git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
+          git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
 
-      # 7. Determine which packages changed
+      # 8. Determine which packages changed
       - name: Detect changed packages
         id: changed-packages
         run: |
