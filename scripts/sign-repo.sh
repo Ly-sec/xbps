@@ -80,4 +80,14 @@ echo "[sign] Signing repository as \"$SIGNEDBY\"..."
 eval "$CMD"
 
 echo "[sign] Repository signed successfully."
+
+# Sign individual packages (produces .sig2 files)
+echo "[sign] Signing individual packages..."
+if [ -n "$KEY_ARG" ]; then
+	for pkg in "$REPO_DIR"/*.xbps; do
+		[ -f "$pkg" ] || continue
+		xbps-rindex --sign-pkg --signedby "$SIGNEDBY" $KEY_ARG "$pkg" 2>/dev/null || true
+	done
+fi
+
 echo "[sign] Public key for distribution: $REPO_ROOT/keys/pub.pem"
