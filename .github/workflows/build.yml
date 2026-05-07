@@ -99,19 +99,8 @@ jobs:
       - name: Fix void-packages permissions
         run: chown -R builder:builder void-packages 2>/dev/null || true
 
-      # 7. Restore cached bootstrap masterdir
-      - name: Cache bootstrap masterdir
-        id: cache-bootstrap
-        uses: actions/cache@v4
-        with:
-          path: void-packages/hostdir
-          key: bootstrap-native-${{ hashFiles('void-packages/.git/HEAD') }}
-          restore-keys: |
-            bootstrap-native-
-
-      # 8. Bootstrap if needed
+      # 7. Bootstrap build environment
       - name: Bootstrap build environment
-        if: steps.cache-bootstrap.outputs.cache-hit != 'true'
         run: |
           sudo -Eu builder bash scripts/setup.sh --clone-only
           sudo -Eu builder bash scripts/overlay-packages.sh
@@ -125,13 +114,13 @@ jobs:
           mkdir -p void-packages/hostdir
           touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
 
-      # 9. Ensure upstream is up-to-date even on cache hit
+      # 8. Ensure upstream is up-to-date even on cache hit
       - name: Update upstream clone
         run: |
           sudo -Eu builder git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
           sudo -Eu builder git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
 
-      # 10. Determine which packages to build
+      # 9. Determine which packages to build
       - name: Detect changed packages
         id: changed-packages
         run: |
@@ -144,16 +133,16 @@ jobs:
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
           echo "Packages to build: $PACKAGES"
 
-      # 11. Overlay custom templates
+      # 10. Overlay custom templates
       - name: Overlay custom templates
         if: steps.changed-packages.outputs.should_build == 'true'
         run: sudo -Eu builder bash scripts/overlay-packages.sh
 
-      # 12. Ensure void-packages is writable (cache restore may reset ownership)
+      # 11. Ensure void-packages is writable (cache restore may reset ownership)
       - name: Fix void-packages permissions
         run: chown -R builder:builder void-packages
 
-      # 13. Build all changed packages
+      # 12. Build all changed packages
       - name: Build packages
         if: steps.changed-packages.outputs.should_build == 'true'
         run: |
@@ -170,7 +159,7 @@ jobs:
           XBPS_CHROOT_CMD: ethereal
           XBPS_ALLOW_RESTRICTED: yes
 
-      # 14. Sign the repository index
+      # 13. Sign the repository index
       - name: Sign repository
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/sign-repo.sh
@@ -179,7 +168,7 @@ jobs:
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
-      # 15. Publish to GitHub Releases
+      # 14. Publish to GitHub Releases
       - name: Publish release
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/publish.sh
