@@ -1,24 +1,3 @@
-# build.yml — CI workflow for building custom Void Linux packages
-#
-# Triggered by:
-#   - Push to main that changes anything under pkgs/
-#   - Manual trigger (workflow_dispatch)
-#
-# What it does:
-#   1. Check out this repo with full git history (for change detection).
-#   2. Clone upstream void-packages (shallow, single branch, cached).
-#   3. Set up the xbps-src build environment (binary-bootstrap).
-#   4. Detect which packages changed vs. the last build.
-#   5. Overlay custom templates into the upstream tree.
-#   6. Build changed packages with xbps-src.
-#   7. Collect .xbps files, generate repo metadata, sign the repo.
-#   8. Publish everything as a GitHub Release.
-#
-# Required repository secrets:
-#   XBPS_PRIVKEY   — Ed25519 private key (PEM) for repo signing
-#   XBPS_PUBKEY    — Ed25519 public key (PEM) for repo signing
-#   XBPS_SIGNEDBY  — Signer identity string
-
 name: Build packages
 
 on:
@@ -28,13 +7,7 @@ on:
     paths:
       - 'pkgs/**'
       - '.github/workflows/build.yml'
-      - 'scripts/**'
   workflow_dispatch:
-    inputs:
-      packages:
-        description: 'Space-separated list of packages to build (empty = all)'
-        required: false
-        type: string
 
 concurrency:
   group: build-${{ github.ref }}
@@ -42,140 +15,66 @@ concurrency:
 
 env:
   XBPS_TARGET_ARCH: x86_64
-  UPSTREAM_REPO: https://github.com/void-linux/void-packages.git
-  UPSTREAM_BRANCH: master
-  XBPS_CHROOT_CMD: ethereal
   XBPS_ALLOW_RESTRICTED: yes
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/void-linux/void-glibc-full:latest
-      options: --user root --privileged
-      volumes:
-        - /dev:/dev
     timeout-minutes: 120
 
     steps:
-      # 1. Prepare container: update xbps and install required tools
-      - name: Prepare container
-        run: |
-          xbps-install -Syu xbps && xbps-install -yu
-          xbps-install -y bash git curl jq github-cli sudo
-          # xbps-src refuses to run as root — create a builder user
-          useradd -G xbuilder -M builder
-
-      # 2. Check out this overlay repo with full history for change detection
       - name: Checkout overlay repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 3. Make workspace writable by the builder user
-      - name: Fix permissions
-        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Install xbps tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          curl -sL "https://alpha.de.repo.voidlinux.org/static/xbps-static-static-0.60.7.x86_64-musl.tar.xz" \
+            | sudo tar xJ -C / --strip-components=1
+          # xbps-src refuses to run as root — create builder user
+          sudo useradd -m builder
+          sudo chown -R builder:builder .
 
-      # 4. Restore cached upstream void-packages clone
-      #    Cache key is based on the date so it refreshes weekly.
-      #    The restore-keys fallback allows reuse across pushes.
-      - name: Cache upstream void-packages
-        id: cache-void-packages
-        uses: actions/cache@v4
-        with:
-          path: void-packages
-          key: void-packages-${{ env.UPSTREAM_BRANCH }}-${{ github.run_id }}
-          restore-keys: |
-            void-packages-${{ env.UPSTREAM_BRANCH }}-
-
-      # 5. Clone upstream if not already present from cache
       - name: Clone upstream void-packages
-        if: steps.cache-void-packages.outputs.cache-hit != 'true'
         run: |
           if [ ! -d void-packages/.git ]; then
-            rm -rf void-packages
-            git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
+            git clone --depth=1 https://github.com/void-linux/void-packages.git
           fi
 
-      # 6. Ensure void-packages is writable by builder
-      - name: Fix void-packages permissions
-        run: chown -R builder:builder void-packages 2>/dev/null || true
-
-      # 7. Bootstrap build environment
-      - name: Bootstrap build environment
+      - name: Bootstrap
         run: |
-          sudo -Eu builder bash scripts/setup.sh --clone-only
           sudo -Eu builder bash scripts/overlay-packages.sh
-          # Run bootstrap with retry for network flakiness
-          # Use native bootstrap (no -a flag) for x86_64 to match build.sh behavior
-          SUCCESS=0
           for i in 1 2 3; do
-            if sudo -Eu builder ./void-packages/xbps-src binary-bootstrap; then
-              SUCCESS=1
-              break
-            fi
+            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap && break
             echo "Bootstrap attempt $i failed, retrying..."
             sleep 5
           done
-          [ "$SUCCESS" = 1 ] || exit 1
-          mkdir -p void-packages/hostdir
-          touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
 
-      # 8. Ensure upstream is up-to-date even on cache hit
-      - name: Update upstream clone
+      - name: Update upstream
         run: |
-          sudo -Eu builder git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
-          sudo -Eu builder git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
+          sudo -Eu builder git -C void-packages fetch --depth=1 origin master
+          sudo -Eu builder git -C void-packages reset --hard origin/master
 
-      # 9. Determine which packages to build
-      - name: Detect changed packages
-        id: changed-packages
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.packages }}" ]; then
-            PACKAGES="${{ inputs.packages }}"
-          else
-            PACKAGES="ALL"
-          fi
-          echo "should_build=true" >> $GITHUB_OUTPUT
-          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
-          echo "Packages to build: $PACKAGES"
-
-      # 10. Overlay custom templates
-      - name: Overlay custom templates
-        if: steps.changed-packages.outputs.should_build == 'true'
+      - name: Overlay templates
         run: sudo -Eu builder bash scripts/overlay-packages.sh
 
-      # 11. Ensure void-packages is writable (cache restore may reset ownership)
-      - name: Fix void-packages permissions
-        run: chown -R builder:builder void-packages
-
-      # 12. Build all changed packages
       - name: Build packages
-        if: steps.changed-packages.outputs.should_build == 'true'
         run: |
-          PACKAGES="${{ steps.changed-packages.outputs.packages }}"
-          if [ "$PACKAGES" = "ALL" ]; then
-            sudo -Eu builder bash scripts/build.sh
-          else
-            for pkg in $PACKAGES; do
-              sudo -Eu builder bash scripts/build.sh "$pkg"
-            done
-          fi
+          sudo -Eu builder bash scripts/build.sh
         env:
           XBPS_MAKEJOBS: $(nproc)
 
-      # 13. Sign the repository index
       - name: Sign repository
-        if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/sign-repo.sh
         env:
           XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
-      # 14. Publish to GitHub Releases
-      - name: Publish release
-        if: steps.changed-packages.outputs.should_build == 'true'
+      - name: Publish to GitHub Releases
         run: bash scripts/publish.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
