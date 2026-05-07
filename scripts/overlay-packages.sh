@@ -3,7 +3,7 @@
 #
 # For each directory under pkgs/<pkgname>/, this script:
 #   1. Removes any existing upstream srcpkgs/<pkgname> directory.
-#   2. Copies template, patches/, and update into void-packages/srcpkgs/<pkgname>/.
+#   2. Copies template, files/, patches/, and update into void-packages/srcpkgs/<pkgname>/.
 #
 # Usage: bash scripts/overlay-packages.sh [pkgname ...]
 #   If pkgname(s) are given, only those packages are overlaid.
@@ -48,6 +48,12 @@ overlay_package() {
 	if [ -d "$src/patches" ]; then
 		cp -r "$src/patches" "$dst/"
 		echo "[overlay] $pkgname: patches copied ($(ls -1 "$src/patches" | wc -l) files)"
+	fi
+
+	# Copy files directory (optional, used by FILESDIR in templates)
+	if [ -d "$src/files" ]; then
+		cp -r "$src/files" "$dst/"
+		echo "[overlay] $pkgname: files directory copied"
 	fi
 
 	# Copy update file (optional)
