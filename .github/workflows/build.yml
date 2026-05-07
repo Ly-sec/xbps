@@ -73,6 +73,7 @@ jobs:
 
       - name: Prepare Pages artifact
         run: |
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
           rm -rf public
           mkdir -p public/keys
           cp -a repo/. public/
@@ -82,6 +83,80 @@ jobs:
             echo "keys/pub.pem not found after signing"
             exit 1
           fi
+          touch public/.nojekyll
+          cat > public/index.html <<EOF
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>XBPS Repository</title>
+            <style>
+              :root {
+                color-scheme: light;
+                --bg: #f5f1e8;
+                --panel: #fffdf8;
+                --text: #1f2933;
+                --muted: #52606d;
+                --accent: #8f2d56;
+                --border: #d9cbb8;
+              }
+              * { box-sizing: border-box; }
+              body {
+                margin: 0;
+                font-family: Georgia, "Iowan Old Style", serif;
+                background: linear-gradient(180deg, #efe7da 0%, var(--bg) 100%);
+                color: var(--text);
+              }
+              main {
+                max-width: 760px;
+                margin: 48px auto;
+                padding: 0 20px;
+              }
+              .card {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 18px;
+                padding: 28px;
+                box-shadow: 0 18px 40px rgba(31, 41, 51, 0.08);
+              }
+              h1 { margin-top: 0; font-size: 2rem; }
+              p, li { line-height: 1.6; color: var(--muted); }
+              code {
+                font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+                background: #f3ece2;
+                color: var(--text);
+                padding: 0.15rem 0.35rem;
+                border-radius: 6px;
+              }
+              pre {
+                overflow-x: auto;
+                background: #201a1a;
+                color: #f7efe4;
+                padding: 16px;
+                border-radius: 12px;
+              }
+              a { color: var(--accent); }
+            </style>
+          </head>
+          <body>
+            <main>
+              <section class="card">
+                <h1>XBPS Repository</h1>
+                <p>This site serves a raw XBPS repository for Void Linux. The repository root is this URL itself.</p>
+                <p>Public key: <a href="keys/pub.pem">keys/pub.pem</a></p>
+                <p>Repodata: <a href="x86_64-repodata">x86_64-repodata</a></p>
+                <p>Add it on a Void system with:</p>
+                <pre><code>sudo mkdir -p /etc/xbps.d
+sudo curl -fsSL "$REPO_URL/keys/pub.pem" -o /var/db/xbps/keys/your-repo-key.pem
+echo "repository=$REPO_URL" | sudo tee /etc/xbps.d/20-void-repo.conf
+sudo xbps-install -S</code></pre>
+                <p>Replace <code>your-repo-key.pem</code> with the filename expected for your key fingerprint.</p>
+              </section>
+            </main>
+          </body>
+          </html>
+          EOF
 
       - name: Upload built repository artifacts
         uses: actions/upload-artifact@v4
