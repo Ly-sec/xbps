@@ -1,0 +1,69 @@
+pkgname=fluxer-canary-bin
+version=0.0.122
+revision=1
+archs="x86_64 aarch64"
+create_wrksrc=yes
+depends="gtk+3 nss alsa-lib"
+short_desc="Fluxer Canary Desktop Application"
+maintainer="Ly-sec <void@lysec.dev>"
+license="AGPL-3.0-only"
+homepage="https://fluxer.app"
+repository=nonfree
+restricted=yes
+nostrip=yes
+provides="fluxer-canary-${version}_${revision}"
+conflicts="fluxer-canary"
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64)
+		_arch=x64
+		distfiles="https://api.fluxer.app/dl/desktop/canary/linux/x64/${version}/tar_gz>fluxer-${version}-x64.tar.gz"
+		checksum=e2d6b6228364e93219bf54364c43d0a4356c8eb96f4849f8cd34224e759c3726
+		;;
+	aarch64)
+		_arch=arm64
+		distfiles="https://api.fluxer.app/dl/desktop/canary/linux/arm64/${version}/tar_gz>fluxer-${version}-arm64.tar.gz"
+		checksum=84bb3ad386ff5acad3bf8b0c339057891ff8b58362e37475be8c6abecf6e17ec
+		;;
+esac
+
+do_install() {
+	local appdir="Fluxer Canary-${version}-linux-${_arch}"
+
+	if [ ! -d "$appdir" ]; then
+		appdir="$(find . -maxdepth 1 -type d -name "Fluxer*${version}*" | head -n1)"
+	fi
+
+	[ -n "$appdir" ] && [ -d "$appdir" ] || \
+		msg_error "Could not find extracted Fluxer Canary directory\n"
+
+	vmkdir opt/fluxer-canary-bin
+	vcopy "${appdir}/*" opt/fluxer-canary-bin
+
+
+	local unpacked="${DESTDIR}/opt/fluxer-canary-bin/resources/app.asar.unpacked/node_modules"
+	if [ -d "$unpacked" ]; then
+		rm -rf \
+			"$unpacked/uiohook-napi/prebuilds/darwin-arm64" \
+			"$unpacked/uiohook-napi/prebuilds/darwin-x64" \
+			"$unpacked/uiohook-napi/prebuilds/win32-arm64" \
+			"$unpacked/uiohook-napi/prebuilds/win32-x64"
+		case "$XBPS_TARGET_MACHINE" in
+			x86_64)
+				rm -rf "$unpacked/uiohook-napi/prebuilds/linux-arm64"
+				rm -f "$unpacked/velopack/lib/native/"*"_linux_arm64_"*.node
+				;;
+			aarch64)
+				rm -rf "$unpacked/uiohook-napi/prebuilds/linux-x64"
+				rm -f "$unpacked/velopack/lib/native/"*"_linux_x64_"*.node
+				;;
+		esac
+		rm -f "$unpacked/velopack/lib/native/"*"_win_"*.node
+	fi
+
+	vmkdir usr/bin
+	ln -s /opt/fluxer-canary-bin/fluxer-canary "${DESTDIR}/usr/bin/fluxer-canary"
+
+	vinstall "${FILESDIR}/fluxer-canary.desktop" 644 usr/share/applications fluxer-canary.desktop
+	vinstall "${FILESDIR}/fluxer-canary.png" 644 usr/share/icons/hicolor/512x512/apps fluxer-canary.png
+}
