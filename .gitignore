@@ -1,0 +1,28 @@
+# Build artifacts
+hostdir/
+
+# Repository output
+repo/*.xbps
+repo/*.sig
+repo/*.fdb
+repo/*.flist
+repo/*-repodata
+!repo/README.md
+
+# Config files with secrets (user-local overrides, not committed)
+etc/build.conf
+etc/signing.conf
+etc/user-config.sh
+
+# Bootstrap / temporary clone of upstream void-packages
+void-packages/
+
+# CI temporary files
+.tmp/
+
+# Signing keys (sensitive — never commit)
+keys/
+
+# OS metadata
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+# signing.conf — Repository signing configuration
+#
+# Copy this file to etc/signing.conf and fill in your signing key info:
+#   cp etc/signing.conf.example etc/signing.conf
+#
+# SECURITY: Never commit this file! It may contain your private key.
+# The .gitignore ignores etc/signing.conf.
+#
+# In CI, set these values via GitHub Secrets and environment variables
+# (XBPS_PRIVKEY, XBPS_PUBKEY, XBPS_SIGNEDBY) instead of using this file.
+
+# Path to Ed25519 private key file (PEM format)
+# Or set to the PEM content inline (though environment variables are safer)
+PRIVKEY="keys/priv.pem"
+
+# Path to Ed25519 public key file (PEM format)
+# Can be derived from the private key if not specified
+PUBKEY="keys/pub.pem"
+
+# Signer identity — this string is embedded in the repository signature
+SIGNEDBY="Your Name <you@example.com>"

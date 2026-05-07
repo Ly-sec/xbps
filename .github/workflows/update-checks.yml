@@ -1,0 +1,101 @@
+# update-checks.yml — Scheduled workflow for checking package updates
+#
+# Runs on a schedule (default: weekly on Monday) and on demand.
+# For each package template, checks whether a newer upstream version exists.
+# If updates are found, creates a GitHub Issue listing them.
+#
+# Requires no secrets — update-check only reads upstream sources.
+
+name: Check package updates
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: update-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XBPS_TARGET_ARCH: x86_64
+  UPSTREAM_REPO: https://github.com/void-linux/void-packages.git
+  UPSTREAM_BRANCH: master
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout overlay repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # We don't cache for update checks since they're infrequent
+      - name: Clone upstream void-packages
+        run: |
+          git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
+
+      - name: Run update checks
+        id: updates
+        run: |
+          # Run check-updates in CI mode
+          bash scripts/check-updates.sh --ci 2>&1 | tee updates-output.txt
+
+      - name: Create issue for updates
+        if: always()
+        run: |
+          # Parse the update output and create an issue if updates were found
+          UPDATES=$(grep "^UPDATE:" updates-output.txt 2>/dev/null || true)
+
+          if [ -z "$UPDATES" ]; then
+            echo "No package updates found."
+            exit 0
+          fi
+
+          # Build issue body
+          ISSUE_BODY="## Package updates available
+
+          The following packages have newer upstream versions available:
+
+          | Package | Current | Latest |
+          |---------|---------|--------|
+          "
+
+          while IFS='|' read -r _ pkg current latest; do
+            ISSUE_BODY+="| $pkg | $current | $latest |\n"
+          done <<< "$UPDATES"
+
+          ISSUE_BODY+="
+          Run \`bash scripts/update-package.sh <pkgname> <version>\` to update a package.
+          "
+
+          # Check if an update issue already exists
+          EXISTING_ISSUE=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "update-check" \
+            --state open \
+            --json number \
+            --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            # Update existing issue
+            gh issue update "$EXISTING_ISSUE" \
+              --repo "${{ github.repository }}" \
+              --title "Package updates available ($(date +%Y-%m-%d))" \
+              --body "$ISSUE_BODY" 2>/dev/null || true
+            echo "Updated existing issue #$EXISTING_ISSUE."
+          else
+            # Create new issue
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "Package updates available ($(date +%Y-%m-%d))" \
+              --body "$ISSUE_BODY" \
+              --label "update-check" 2>/dev/null || true
+            echo "Created new update issue."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

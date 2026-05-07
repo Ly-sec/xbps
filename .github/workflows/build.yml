@@ -1,0 +1,173 @@
+# build.yml — CI workflow for building custom Void Linux packages
+#
+# Triggered by:
+#   - Push to main that changes anything under pkgs/
+#   - Manual trigger (workflow_dispatch)
+#
+# What it does:
+#   1. Check out this repo with full git history (for change detection).
+#   2. Clone upstream void-packages (shallow, single branch, cached).
+#   3. Set up the xbps-src build environment (binary-bootstrap).
+#   4. Detect which packages changed vs. the last build.
+#   5. Overlay custom templates into the upstream tree.
+#   6. Build changed packages with xbps-src.
+#   7. Collect .xbps files, generate repo metadata, sign the repo.
+#   8. Publish everything as a GitHub Release.
+#
+# Required repository secrets:
+#   XBPS_PRIVKEY   — Ed25519 private key (PEM) for repo signing
+#   XBPS_PUBKEY    — Ed25519 public key (PEM) for repo signing
+#   XBPS_SIGNEDBY  — Signer identity string
+
+name: Build packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkgs/**'
+      - '.github/workflows/build.yml'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Space-separated list of packages to build (empty = all)'
+        required: false
+        type: string
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XBPS_TARGET_ARCH: x86_64
+  UPSTREAM_REPO: https://github.com/void-linux/void-packages.git
+  UPSTREAM_BRANCH: master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      # 1. Check out this overlay repo with full history for change detection
+      - name: Checkout overlay repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Restore cached upstream void-packages clone
+      #    Cache key is based on the date so it refreshes weekly.
+      #    The restore-keys fallback allows reuse across pushes.
+      - name: Cache upstream void-packages
+        id: cache-void-packages
+        uses: actions/cache@v4
+        with:
+          path: void-packages
+          key: void-packages-${{ env.UPSTREAM_BRANCH }}-${{ github.run_id }}
+          restore-keys: |
+            void-packages-${{ env.UPSTREAM_BRANCH }}-
+
+      # 3. Clone upstream if cache miss
+      - name: Clone upstream void-packages
+        if: steps.cache-void-packages.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
+
+      # 4. Restore cached bootstrap masterdir
+      - name: Cache bootstrap masterdir
+        id: cache-bootstrap
+        uses: actions/cache@v4
+        with:
+          path: void-packages/hostdir
+          key: bootstrap-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/.git/HEAD') }}
+          restore-keys: |
+            bootstrap-${{ env.XBPS_TARGET_ARCH }}-
+
+      # 5. Bootstrap if needed
+      - name: Bootstrap build environment
+        if: steps.cache-bootstrap.outputs.cache-hit != 'true'
+        run: |
+          bash scripts/setup.sh --clone-only
+          bash scripts/overlay-packages.sh
+          # Run bootstrap with retry for network flakiness
+          for i in 1 2 3; do
+            cd void-packages && ./xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
+            echo "Bootstrap attempt $i failed, retrying..."
+            sleep 5
+          done
+          mkdir -p hostdir
+          touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
+
+      # 6. Ensure upstream is up-to-date even on cache hit
+      - name: Update upstream clone
+        run: |
+          cd void-packages
+          git fetch --depth=1 origin "$UPSTREAM_BRANCH"
+          git reset --hard origin/"$UPSTREAM_BRANCH"
+
+      # 7. Determine which packages changed
+      - name: Detect changed packages
+        id: changed-packages
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.packages }}" ]; then
+            # Manual build: use specified packages
+            PACKAGES="${{ inputs.packages }}"
+          else
+            # Automatic build: detect changed packages
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              # First push on a branch — build everything
+              PACKAGES="ALL"
+            else
+              # Detect packages changed since last push
+              CHANGED=$(git diff --name-only "${{ github.event.before }}"...HEAD -- pkgs/ | \
+                grep '^pkgs/' | cut -d/ -f2 | sort -u || true)
+              if [ -z "$CHANGED" ]; then
+                echo "No package templates changed."
+                echo "should_build=false" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+              PACKAGES="$CHANGED"
+            fi
+          fi
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+          echo "Packages to build: $PACKAGES"
+
+      # 8. Overlay custom templates
+      - name: Overlay custom templates
+        if: steps.changed-packages.outputs.should_build == 'true'
+        run: bash scripts/overlay-packages.sh
+
+      # 9. Build all changed packages
+      - name: Build packages
+        if: steps.changed-packages.outputs.should_build == 'true'
+        run: |
+          PACKAGES="${{ steps.changed-packages.outputs.packages }}"
+          if [ "$PACKAGES" = "ALL" ]; then
+            bash scripts/build.sh
+          else
+            for pkg in $PACKAGES; do
+              bash scripts/build.sh "$pkg"
+            done
+          fi
+        env:
+          XBPS_MAKEJOBS: $(nproc)
+
+      # 10. Sign the repository index
+      - name: Sign repository
+        if: steps.changed-packages.outputs.should_build == 'true'
+        run: bash scripts/sign-repo.sh
+        env:
+          XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
+          XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
+          XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
+
+      # 11. Publish to GitHub Releases
+      - name: Publish release
+        if: steps.changed-packages.outputs.should_build == 'true'
+        run: bash scripts/publish.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
