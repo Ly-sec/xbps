@@ -166,6 +166,8 @@ jobs:
           fi
         env:
           XBPS_MAKEJOBS: $(nproc)
+          XBPS_CHROOT_CMD: ethereal
+          XBPS_ALLOW_RESTRICTED: yes
 
       # 14. Sign the repository index
       - name: Sign repository
