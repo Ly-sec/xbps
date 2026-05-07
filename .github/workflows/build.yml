@@ -36,33 +36,8 @@ jobs:
           sudo useradd -m builder
           sudo chown -R builder:builder .
 
-      - name: Build everything
-        run: |
-          sudo -u builder bash -e <<'SCRIPT'
-            set -x
-            cd "$GITHUB_WORKSPACE"
-
-            # Clone upstream if needed
-            if [ ! -d void-packages/.git ]; then
-              git clone --depth=1 https://github.com/void-linux/void-packages.git
-            fi
-
-            # Overlay and bootstrap
-            bash scripts/overlay-packages.sh
-            for i in 1 2 3; do
-              ./void-packages/xbps-src binary-bootstrap && break
-              echo "Bootstrap attempt $i failed, retrying..."
-              sleep 5
-            done
-
-            # Update upstream and overlay again (in case reset removed files)
-            git -C void-packages fetch --depth=1 origin master
-            git -C void-packages reset --hard origin/master
-            bash scripts/overlay-packages.sh
-
-            # Build all packages
-            XBPS_MAKEJOBS=$(nproc) bash scripts/build.sh
-SCRIPT
+      - name: Build packages
+        run: sudo -u builder bash scripts/ci-build.sh
 
       - name: Sign repository
         run: bash scripts/sign-repo.sh
