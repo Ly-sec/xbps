@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# ci-build.sh — Full CI build pipeline (run from repo root)
+# ci-build.sh — CI build pipeline (run as builder, upstream already cloned)
 set -euo pipefail
 
-# Clone upstream if needed
-if [ ! -d void-packages/.git ]; then
-	git clone --depth=1 https://github.com/void-linux/void-packages.git
-fi
+: "${XBPS_TARGET_ARCH:=x86_64}"
+: "${XBPS_ALLOW_RESTRICTED:=no}"
+export XBPS_TARGET_ARCH XBPS_ALLOW_RESTRICTED
 
-# Overlay templates and bootstrap
+echo "=== Overlaying custom templates ==="
 bash scripts/overlay-packages.sh
+
+echo "=== Bootstrapping build environment ==="
 for i in 1 2 3; do
-	./void-packages/xbps-src binary-bootstrap && break
-	echo "Bootstrap attempt $i failed, retrying..."
+	if ./void-packages/xbps-src binary-bootstrap; then
+		echo "Bootstrap succeeded."
+		break
+	fi
+	echo "Bootstrap attempt $i failed, retrying in 5s..."
 	sleep 5
 done
 
-# Update upstream and re-overlay (reset may remove our files)
+echo "=== Updating upstream ==="
 git -C void-packages fetch --depth=1 origin master
 git -C void-packages reset --hard origin/master
 bash scripts/overlay-packages.sh
 
-# Build all packages
+echo "=== Building packages ==="
 XBPS_MAKEJOBS=$(nproc) bash scripts/build.sh

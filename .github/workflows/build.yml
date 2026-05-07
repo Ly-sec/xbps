@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install xbps tools and create builder
         run: |
@@ -34,10 +35,15 @@ jobs:
           curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
             | sudo tar xJ -C / --strip-components=1
           sudo useradd -m builder
-          sudo chown -R builder:builder .
+
+      - name: Clone upstream void-packages
+        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
+
+      - name: Fix ownership for builder
+        run: sudo chown -R builder:builder .
 
       - name: Build packages
-        run: sudo -u builder XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH XBPS_ALLOW_RESTRICTED=$XBPS_ALLOW_RESTRICTED bash scripts/ci-build.sh
+        run: sudo -u builder bash scripts/ci-build.sh
 
       - name: Sign repository
         run: bash scripts/sign-repo.sh
