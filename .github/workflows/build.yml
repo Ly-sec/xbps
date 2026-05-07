@@ -60,7 +60,9 @@ jobs:
       - name: Prepare container
         run: |
           xbps-install -Syu xbps && xbps-install -yu
-          xbps-install -y bash git curl jq github-cli
+          xbps-install -y bash git curl jq github-cli sudo
+          # xbps-src refuses to run as root — create a builder user
+          useradd -G xbuilder -M builder
 
       # 2. Check out this overlay repo with full history for change detection
       - name: Checkout overlay repo
@@ -68,7 +70,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 3. Restore cached upstream void-packages clone
+      # 3. Make workspace writable by the builder user
+      - name: Fix permissions
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      # 4. Restore cached upstream void-packages clone
       #    Cache key is based on the date so it refreshes weekly.
       #    The restore-keys fallback allows reuse across pushes.
       - name: Cache upstream void-packages
@@ -104,7 +110,7 @@ jobs:
           bash scripts/overlay-packages.sh
           # Run bootstrap with retry for network flakiness
           for i in 1 2 3; do
-            ./void-packages/xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
+            sudo -Eu builder ./void-packages/xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
             echo "Bootstrap attempt $i failed, retrying..."
             sleep 5
           done
@@ -156,10 +162,10 @@ jobs:
         run: |
           PACKAGES="${{ steps.changed-packages.outputs.packages }}"
           if [ "$PACKAGES" = "ALL" ]; then
-            bash scripts/build.sh
+            sudo -Eu builder bash scripts/build.sh
           else
             for pkg in $PACKAGES; do
-              bash scripts/build.sh "$pkg"
+              sudo -Eu builder bash scripts/build.sh "$pkg"
             done
           fi
         env:
