@@ -8,6 +8,12 @@ on:
       - 'pkgs/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish signed packages to GitHub Releases'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: build-${{ github.ref }}
@@ -31,7 +37,7 @@ jobs:
       - name: Install xbps tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd
+          sudo apt-get install -y -qq zstd bubblewrap
           curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
             | sudo tar xJ -C / --strip-components=1
 
@@ -41,7 +47,20 @@ jobs:
       - name: Build packages
         run: bash scripts/ci-build.sh
 
+      - name: Upload built repository artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xbps-repo-${{ github.run_number }}
+          path: |
+            repo/*.xbps
+            repo/*.sig*
+            repo/*.fdb*
+            repo/*.flist*
+          if-no-files-found: warn
+
       - name: Sign repository
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
         run: bash scripts/sign-repo.sh
         env:
           XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
@@ -49,6 +68,7 @@ jobs:
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
       - name: Publish to GitHub Releases
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
         run: bash scripts/publish.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
