@@ -148,7 +148,11 @@ jobs:
         if: steps.changed-packages.outputs.should_build == 'true'
         run: sudo -Eu builder bash scripts/overlay-packages.sh
 
-      # 12. Build all changed packages
+      # 12. Ensure void-packages is writable (cache restore may reset ownership)
+      - name: Fix void-packages permissions
+        run: chown -R builder:builder void-packages
+
+      # 13. Build all changed packages
       - name: Build packages
         if: steps.changed-packages.outputs.should_build == 'true'
         run: |
@@ -163,7 +167,7 @@ jobs:
         env:
           XBPS_MAKEJOBS: $(nproc)
 
-      # 13. Sign the repository index
+      # 14. Sign the repository index
       - name: Sign repository
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/sign-repo.sh
@@ -172,7 +176,7 @@ jobs:
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
-      # 14. Publish to GitHub Releases
+      # 15. Publish to GitHub Releases
       - name: Publish release
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/publish.sh
