@@ -86,11 +86,14 @@ jobs:
           restore-keys: |
             void-packages-${{ env.UPSTREAM_BRANCH }}-
 
-      # 4. Clone upstream if cache miss
+      # 4. Clone upstream if not already present from cache
       - name: Clone upstream void-packages
         if: steps.cache-void-packages.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
+          if [ ! -d void-packages/.git ]; then
+            rm -rf void-packages
+            git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
+          fi
 
       # 5. Restore cached bootstrap masterdir
       - name: Cache bootstrap masterdir
