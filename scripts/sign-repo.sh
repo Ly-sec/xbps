@@ -32,6 +32,7 @@ fi
 : "${SIGNEDBY:=${XBPS_SIGNEDBY:-}}"
 
 REPO_DIR="$REPO_ROOT/repo"
+PUBKEY_DEST="$REPO_ROOT/keys/pub.pem"
 
 if [ ! -d "$REPO_DIR" ] || [ -z "$(ls "$REPO_DIR"/*.xbps 2>/dev/null)" ]; then
 	echo "[sign] No .xbps files found in $REPO_DIR. Build packages first."
@@ -43,6 +44,19 @@ if [ -z "$SIGNEDBY" ]; then
 	echo "[sign] Set it in etc/signing.conf or the XBPS_SIGNEDBY env var."
 	echo "[sign] Example: SIGNEDBY=\"Your Name <you@example.com>\""
 	exit 1
+fi
+
+mkdir -p "$REPO_ROOT/keys"
+
+if [ -n "$PUBKEY" ]; then
+	if [ -f "$PUBKEY" ]; then
+		cp "$PUBKEY" "$PUBKEY_DEST"
+	elif echo "$PUBKEY" | grep -q "^-----BEGIN"; then
+		echo "$PUBKEY" > "$PUBKEY_DEST"
+	else
+		echo "[sign] Warning: PUBKEY is set but doesn't point to a file or contain PEM data."
+	fi
+	chmod 644 "$PUBKEY_DEST" 2>/dev/null || true
 fi
 
 # Determine how to provide the private key
@@ -90,4 +104,11 @@ if [ -n "$KEY_ARG" ]; then
 	done
 fi
 
-echo "[sign] Public key for distribution: $REPO_ROOT/keys/pub.pem"
+if [ -f "$PUBKEY_DEST" ]; then
+	echo "[sign] Public key for distribution: $PUBKEY_DEST"
+else
+	echo "[sign] Warning: public key not found at $PUBKEY_DEST"
+	if [ -z "$PUBKEY" ]; then
+		echo "[sign] Set PUBKEY/XBPS_PUBKEY or provide keys/pub.pem so clients can trust the repository."
+	fi
+fi

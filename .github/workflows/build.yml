@@ -1,11 +1,18 @@
 name: Build packages
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 on:
   push:
     branches:
       - main
     paths:
       - 'pkgs/**'
+      - 'scripts/**'
+      - 'etc/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
     inputs:
@@ -57,9 +64,27 @@ jobs:
       - name: Build packages
         run: bash scripts/ci-build.sh
 
+      - name: Sign repository
+        run: bash scripts/sign-repo.sh
+        env:
+          XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
+          XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
+          XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
+
+      - name: Prepare Pages artifact
+        run: |
+          rm -rf public
+          mkdir -p public/keys
+          cp -a repo/. public/
+          if [ -f keys/pub.pem ]; then
+            cp keys/pub.pem public/keys/pub.pem
+          else
+            echo "keys/pub.pem not found after signing"
+            exit 1
+          fi
+
       - name: Upload built repository artifacts
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: xbps-repo-${{ github.run_number }}
           path: |
@@ -67,15 +92,13 @@ jobs:
             repo/*.sig*
             repo/*.fdb*
             repo/*.flist*
+            keys/pub.pem
           if-no-files-found: warn
 
-      - name: Sign repository
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
-        run: bash scripts/sign-repo.sh
-        env:
-          XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
-          XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
-          XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
 
       - name: Publish to GitHub Releases
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
@@ -83,3 +106,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

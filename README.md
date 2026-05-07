@@ -13,8 +13,8 @@ templates and selected upstream overrides without vendoring the entire
 4. Packages are built with Void's `xbps-src`.
 5. The resulting `.xbps` files are collected into `repo/` and turned into
    a valid XBPS repository index.
-6. The repository is signed with your Ed25519 key and published via
-   GitHub Releases.
+6. The repository is signed with your Ed25519 key and published as a
+   static repository over HTTP.
 
 Because only your templates are committed, the repo stays small and
 focused.
@@ -103,8 +103,9 @@ See `pkgs/example-override/` for an example.
 Two GitHub Actions workflows are provided:
 
 - **build.yml** — triggered on pushes that modify `pkgs/`. Clones
-  upstream, overlays templates, builds changed packages, signs the repo,
-  and publishes to GitHub Releases.
+   upstream, overlays templates, builds packages, signs the repo,
+   publishes the raw repository files to GitHub Pages, and optionally
+   publishes a GitHub Release.
 - **update-checks.yml** — runs on a schedule (default: weekly). Checks
   all packages for newer upstream versions and opens an issue when an
   update is found.
@@ -119,21 +120,24 @@ Two GitHub Actions workflows are provided:
 
 ## Adding the repository on a Void Linux system
 
-Once packages are published (e.g. via GitHub Releases), configure XBPS on
-the target machine:
+Built packages are always collected locally in `repo/` during a build.
+In CI, that directory is published verbatim to GitHub Pages so XBPS can
+read it as a normal static repository.
+
+Once packages are published, configure XBPS on the target machine:
 
 ```bash
 # 1. Install the public key
-# Download keys/pub.pem from the repo and place at:
-install -m644 pub.pem /var/db/xbps/keys/90/a4/58/.../pub.pem
+# Download keys/pub.pem from your published repo and place it in
+# /var/db/xbps/keys/ using the filename expected by xbps.
 
 # 2. Add the repository
-# The repo URL depends on how you publish. For GitHub Releases:
-xbps-install -R "https://github.com/your-org/void-repo/releases/latest/download" \
-  -r /tmp/voidrepo --sync
+# Example for GitHub Pages:
+xbps-install -R "https://<owner>.github.io/<repo>" -S
 ```
 
-A convenience script will be added in a future release.
+The repository root serves the `.xbps` packages and repodata files, and
+the public key is published at `https://<owner>.github.io/<repo>/keys/pub.pem`.
 
 ## Architecture support
 
