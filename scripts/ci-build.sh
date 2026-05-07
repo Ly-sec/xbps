@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci-build.sh — CI build pipeline (run as builder, upstream already cloned)
+# ci-build.sh — CI build pipeline (run as a non-root user, upstream already cloned)
 set -euo pipefail
 
 : "${XBPS_TARGET_ARCH:=x86_64}"
