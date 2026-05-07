@@ -44,6 +44,8 @@ env:
   XBPS_TARGET_ARCH: x86_64
   UPSTREAM_REPO: https://github.com/void-linux/void-packages.git
   UPSTREAM_BRANCH: master
+  XBPS_CHROOT_CMD: ethereal
+  XBPS_ALLOW_RESTRICTED: yes
 
 jobs:
   build:
@@ -106,11 +108,16 @@ jobs:
           sudo -Eu builder bash scripts/overlay-packages.sh
           # Run bootstrap with retry for network flakiness
           # Use native bootstrap (no -a flag) for x86_64 to match build.sh behavior
+          SUCCESS=0
           for i in 1 2 3; do
-            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap && break
+            if sudo -Eu builder ./void-packages/xbps-src binary-bootstrap; then
+              SUCCESS=1
+              break
+            fi
             echo "Bootstrap attempt $i failed, retrying..."
             sleep 5
           done
+          [ "$SUCCESS" = 1 ] || exit 1
           mkdir -p void-packages/hostdir
           touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
 
@@ -156,8 +163,6 @@ jobs:
           fi
         env:
           XBPS_MAKEJOBS: $(nproc)
-          XBPS_CHROOT_CMD: ethereal
-          XBPS_ALLOW_RESTRICTED: yes
 
       # 13. Sign the repository index
       - name: Sign repository
