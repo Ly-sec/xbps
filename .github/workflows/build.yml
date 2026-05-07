@@ -60,7 +60,7 @@ jobs:
       - name: Prepare container
         run: |
           xbps-install -Syu xbps && xbps-install -yu
-          xbps-install -y git curl gh jq
+          xbps-install -y git curl jq github-cli
 
       # 2. Check out this overlay repo with full history for change detection
       - name: Checkout overlay repo
