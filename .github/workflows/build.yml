@@ -23,49 +23,46 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout overlay repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install xbps tools
+      - name: Install xbps tools and create builder
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq zstd
           curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
             | sudo tar xJ -C / --strip-components=1
-          # xbps-src refuses to run as root — create builder user
           sudo useradd -m builder
           sudo chown -R builder:builder .
 
-      - name: Clone upstream void-packages
+      - name: Build everything
         run: |
-          if [ ! -d void-packages/.git ]; then
-            git clone --depth=1 https://github.com/void-linux/void-packages.git
-          fi
+          sudo -u builder bash -e <<'SCRIPT'
+            set -x
+            cd "$GITHUB_WORKSPACE"
 
-      - name: Bootstrap
-        run: |
-          sudo -Eu builder bash scripts/overlay-packages.sh
-          for i in 1 2 3; do
-            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap && break
-            echo "Bootstrap attempt $i failed, retrying..."
-            sleep 5
-          done
+            # Clone upstream if needed
+            if [ ! -d void-packages/.git ]; then
+              git clone --depth=1 https://github.com/void-linux/void-packages.git
+            fi
 
-      - name: Update upstream
-        run: |
-          sudo -Eu builder git -C void-packages fetch --depth=1 origin master
-          sudo -Eu builder git -C void-packages reset --hard origin/master
+            # Overlay and bootstrap
+            bash scripts/overlay-packages.sh
+            for i in 1 2 3; do
+              ./void-packages/xbps-src binary-bootstrap && break
+              echo "Bootstrap attempt $i failed, retrying..."
+              sleep 5
+            done
 
-      - name: Overlay templates
-        run: sudo -Eu builder bash scripts/overlay-packages.sh
+            # Update upstream and overlay again (in case reset removed files)
+            git -C void-packages fetch --depth=1 origin master
+            git -C void-packages reset --hard origin/master
+            bash scripts/overlay-packages.sh
 
-      - name: Build packages
-        run: |
-          sudo -Eu builder bash scripts/build.sh
-        env:
-          XBPS_MAKEJOBS: $(nproc)
+            # Build all packages
+            XBPS_MAKEJOBS=$(nproc) bash scripts/build.sh
+SCRIPT
 
       - name: Sign repository
         run: bash scripts/sign-repo.sh
