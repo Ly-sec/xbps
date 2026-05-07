@@ -86,7 +86,7 @@ jobs:
           restore-keys: |
             void-packages-${{ env.UPSTREAM_BRANCH }}-
 
-      # 4. Clone upstream if not already present from cache
+      # 5. Clone upstream if not already present from cache
       - name: Clone upstream void-packages
         if: steps.cache-void-packages.outputs.cache-hit != 'true'
         run: |
@@ -95,7 +95,11 @@ jobs:
             git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
           fi
 
-      # 5. Restore cached bootstrap masterdir
+      # 6. Ensure void-packages is writable by builder
+      - name: Fix void-packages permissions
+        run: chown -R builder:builder void-packages 2>/dev/null || true
+
+      # 7. Restore cached bootstrap masterdir
       - name: Cache bootstrap masterdir
         id: cache-bootstrap
         uses: actions/cache@v4
@@ -105,12 +109,12 @@ jobs:
           restore-keys: |
             bootstrap-${{ env.XBPS_TARGET_ARCH }}-
 
-      # 6. Bootstrap if needed
+      # 8. Bootstrap if needed
       - name: Bootstrap build environment
         if: steps.cache-bootstrap.outputs.cache-hit != 'true'
         run: |
-          bash scripts/setup.sh --clone-only
-          bash scripts/overlay-packages.sh
+          sudo -Eu builder bash scripts/setup.sh --clone-only
+          sudo -Eu builder bash scripts/overlay-packages.sh
           # Run bootstrap with retry for network flakiness
           for i in 1 2 3; do
             sudo -Eu builder ./void-packages/xbps-src -a "$XBPS_TARGET_ARCH" binary-bootstrap && break
@@ -120,13 +124,13 @@ jobs:
           mkdir -p void-packages/hostdir
           touch void-packages/hostdir/.bootstrap-$XBPS_TARGET_ARCH
 
-      # 7. Ensure upstream is up-to-date even on cache hit
+      # 9. Ensure upstream is up-to-date even on cache hit
       - name: Update upstream clone
         run: |
-          git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
-          git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
+          sudo -Eu builder git -C void-packages fetch --depth=1 origin "$UPSTREAM_BRANCH"
+          sudo -Eu builder git -C void-packages reset --hard origin/"$UPSTREAM_BRANCH"
 
-      # 8. Determine which packages to build
+      # 10. Determine which packages to build
       - name: Detect changed packages
         id: changed-packages
         run: |
@@ -139,12 +143,12 @@ jobs:
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
           echo "Packages to build: $PACKAGES"
 
-      # 9. Overlay custom templates
+      # 11. Overlay custom templates
       - name: Overlay custom templates
         if: steps.changed-packages.outputs.should_build == 'true'
-        run: bash scripts/overlay-packages.sh
+        run: sudo -Eu builder bash scripts/overlay-packages.sh
 
-      # 10. Build all changed packages
+      # 12. Build all changed packages
       - name: Build packages
         if: steps.changed-packages.outputs.should_build == 'true'
         run: |
@@ -159,7 +163,7 @@ jobs:
         env:
           XBPS_MAKEJOBS: $(nproc)
 
-      # 11. Sign the repository index
+      # 13. Sign the repository index
       - name: Sign repository
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/sign-repo.sh
@@ -168,7 +172,7 @@ jobs:
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
 
-      # 12. Publish to GitHub Releases
+      # 14. Publish to GitHub Releases
       - name: Publish release
         if: steps.changed-packages.outputs.should_build == 'true'
         run: bash scripts/publish.sh
