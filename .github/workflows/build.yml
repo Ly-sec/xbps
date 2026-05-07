@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq zstd
-          curl -sL "https://alpha.de.repo.voidlinux.org/static/xbps-static-static-0.60.7.x86_64-musl.tar.xz" \
+          curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
             | sudo tar xJ -C / --strip-components=1
           # xbps-src refuses to run as root — create builder user
           sudo useradd -m builder
