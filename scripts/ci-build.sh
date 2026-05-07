@@ -3,17 +3,28 @@
 set -euo pipefail
 
 : "${XBPS_TARGET_ARCH:=x86_64}"
-: "${XBPS_ALLOW_RESTRICTED:=no}"
+: "${XBPS_ALLOW_RESTRICTED:=yes}"
 
 # GitHub runners can block uid_map writes used by uunshare/bwrap.
 # Use xbps-uchroot in CI unless explicitly overridden.
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
 	: "${XBPS_CHROOT_CMD:=uchroot}"
+	: "${XBPS_ALLOW_RESTRICTED:=yes}"
 	: "${XBPS_BUILD_ENVIRONMENT:=void-packages-ci}"
 	echo "[ci-build] Using XBPS_CHROOT_CMD=$XBPS_CHROOT_CMD"
 fi
 
 export XBPS_TARGET_ARCH XBPS_ALLOW_RESTRICTED XBPS_CHROOT_CMD XBPS_BUILD_ENVIRONMENT
+
+echo "=== Configuring xbps-src policy ==="
+mkdir -p void-packages/etc
+if [ -f void-packages/etc/conf ]; then
+	if ! grep -q '^XBPS_ALLOW_RESTRICTED=yes$' void-packages/etc/conf; then
+		echo 'XBPS_ALLOW_RESTRICTED=yes' >> void-packages/etc/conf
+	fi
+else
+	echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
+fi
 
 echo "=== Overlaying custom templates ==="
 bash scripts/overlay-packages.sh
