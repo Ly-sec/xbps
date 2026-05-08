@@ -22,7 +22,7 @@ jobs:
       - name: Run update scripts
         id: updates
         run: |
-          for script in pkgs/*/update.sh; do
+          for script in pkgs/*/update; do
             [ -f "$script" ] || continue
             pkg="$(basename "$(dirname "$script")")"
             echo "Checking $pkg..."
