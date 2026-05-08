@@ -9,11 +9,6 @@ concurrency:
   group: update-checks-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  XBPS_TARGET_ARCH: x86_64
-  UPSTREAM_REPO: https://github.com/void-linux/void-packages.git
-  UPSTREAM_BRANCH: master
-
 jobs:
   check-updates:
     runs-on: ubuntu-latest
@@ -24,113 +19,46 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Clone upstream void-packages
-        run: |
-          git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
-
-      - name: Run update checks
+      - name: Run update scripts
         id: updates
         run: |
-          for pkgdir in pkgs/*/; do
-            [ -d "$pkgdir" ] || continue
-            [ -f "$pkgdir/template" ] || continue
-            pkg="$(basename "$pkgdir")"
-            dst="void-packages/srcpkgs/$pkg"
-            rm -rf "$dst"
-            mkdir -p "$dst"
-            cp "$pkgdir/template" "$dst/template"
-            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
-            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
-            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
-            for extra in INSTALL REMOVE options; do
-              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
-            done
+          for script in pkgs/*/update.sh; do
+            [ -f "$script" ] || continue
+            pkg="$(basename "$(dirname "$script")")"
+            echo "Checking $pkg..."
+            bash "$script" | tee -a updates-output.txt
           done
-
-          for pkgdir in pkgs/*/; do
-            [ -d "$pkgdir" ] || continue
-            [ -f "$pkgdir/template" ] || continue
-            pkg="$(basename "$pkgdir")"
-            template="void-packages/srcpkgs/$pkg/template"
-            orig_template="$pkgdir/template"
-            [ ! -f "$template" ] && continue
-
-            current=$(grep -E '^version=' "$template" | sed 's/version=//' | tr -d '"')
-            [ -z "$current" ] && current="(unknown)"
-            echo "Checking $pkg (current: $current)..."
-
-            output=$(./void-packages/xbps-src update-check "$pkg" 2>/dev/null || true)
-
-            if [ -z "$output" ]; then
-              echo "$pkg: no newer version found"
-            elif echo "$output" | grep -q "^$current$"; then
-              echo "$pkg: up to date ($current)"
-            else
-              latest=$(echo "$output" | sort -V | tail -1)
-              if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
-                newer=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
-                if [ "$newer" = "$latest" ]; then
-                  checksum=""
-                  distfile_line=$(grep -E '^distfiles=' "$orig_template" | head -1 | tr -d '"' | sed 's/^distfiles=//' | sed 's/>.*$//')
-                  if [ -n "$distfile_line" ]; then
-                    url=$(echo "$distfile_line" | sed "s/\${version}/$latest/g; s/\$version/$latest/g")
-                    checksum=$(curl -sL --max-time 60 "$url" 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
-                  fi
-
-                  echo "★ $pkg: $current → $latest UPDATE AVAILABLE"
-                  echo "UPDATE:$pkg|$current|$latest"
-                  if [ -n "$checksum" ]; then
-                    echo "CHECKSUM:$pkg|$checksum"
-                  fi
-                fi
-              fi
-            fi
-          done | tee updates-output.txt
 
       - name: Create issue for updates
         if: always()
         run: |
           grep "^UPDATE:" updates-output.txt 2>/dev/null > update-lines.txt || true
-          grep "^CHECKSUM:" updates-output.txt 2>/dev/null > checksum-lines.txt || true
 
           if [ ! -s update-lines.txt ]; then
             echo "No package updates found."
             exit 0
           fi
 
-          declare -A CHECKSUMS
-          while IFS='|' read -r _ pkg cksum; do
-            CHECKSUMS["$pkg"]="$cksum"
-          done < checksum-lines.txt 2>/dev/null || true
-
           ISSUE_BODY="## Package updates available
-
-          New upstream versions were found. To update, bump \`version=\` in the template and replace \`checksum=\`.
 
           | Package | Current | Latest | Checksum |
           |---------|---------|--------|----------|
           "
 
-          while IFS='|' read -r _ pkg current latest; do
-            cksum="${CHECKSUMS[$pkg]:-}"
-            if [ -n "$cksum" ]; then
-              ISSUE_BODY+="| $pkg | $current | $latest | \`$cksum\` |\n"
+          while IFS='|' read -r _ pkg current latest cksum1 cksum2; do
+            if [ -n "$cksum2" ]; then
+              ISSUE_BODY+="| $pkg | $current | $latest | x86_64: \`$cksum1\` / aarch64: \`$cksum2\` |\n"
+            elif [ -n "$cksum1" ]; then
+              ISSUE_BODY+="| $pkg | $current | $latest | \`$cksum1\` |\n"
             else
-              ISSUE_BODY+="| $pkg | $current | $latest | (see below) |\n"
+              ISSUE_BODY+="| $pkg | $current | $latest | (unknown) |\n"
             fi
           done < update-lines.txt
 
           ISSUE_BODY+="
           ### Dependency changes
 
-          Dependency changes cannot be determined automatically. After updating, build the package and verify \`xbps-src show-rdeps\`.
-
-          ### Manual checksum
-
-          For packages where checksum couldn't be auto-computed, download the distfile and run:
-          \`\`\`
-          curl -sL <DISTFILE_URL> | sha256sum
-          \`\`\`
+          Not determined automatically. Build and verify with \`xbps-src show-rdeps\`.
           "
 
           EXISTING_ISSUE=$(gh issue list \
