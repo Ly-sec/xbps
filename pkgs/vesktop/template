@@ -16,6 +16,6 @@ do_extract() {
 }
 
 do_install() {
-	vcopy usr/share/* /usr/share/
-	vcopy opt/Vesktop/* /opt/Vesktop/
+	cp -r "$wrksrc"/usr "$DESTDIR"/
+	cp -r "$wrksrc"/opt "$DESTDIR"/
 }
