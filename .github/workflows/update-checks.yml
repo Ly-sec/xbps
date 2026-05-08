@@ -1,16 +1,7 @@
-# update-checks.yml — Scheduled workflow for checking package updates
-#
-# Runs on a schedule (default: weekly on Monday) and on demand.
-# For each package template, checks whether a newer upstream version exists.
-# If updates are found, creates a GitHub Issue listing them.
-#
-# Requires no secrets — update-check only reads upstream sources.
-
 name: Check package updates
 
 on:
   schedule:
-    # Every Monday at 09:00 UTC
     - cron: '0 9 * * 1'
   workflow_dispatch:
 
@@ -29,12 +20,10 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout overlay repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # We don't cache for update checks since they're infrequent
       - name: Clone upstream void-packages
         run: |
           git clone --depth=1 --branch="$UPSTREAM_BRANCH" "$UPSTREAM_REPO" void-packages
@@ -42,13 +31,53 @@ jobs:
       - name: Run update checks
         id: updates
         run: |
-          # Run check-updates in CI mode
-          bash scripts/check-updates.sh --ci 2>&1 | tee updates-output.txt
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst" && mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            [ -d "$pkgdir/patches" ] && cp -r "$pkgdir/patches" "$dst/"
+            [ -d "$pkgdir/files" ] && cp -r "$pkgdir/files" "$dst/"
+            [ -f "$pkgdir/update" ] && cp "$pkgdir/update" "$dst/update"
+            for extra in INSTALL REMOVE options; do
+              [ -f "$pkgdir/$extra" ] && cp "$pkgdir/$extra" "$dst/$extra"
+            done
+          done
+
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            template="void-packages/srcpkgs/$pkg/template"
+            [ ! -f "$template" ] && continue
+
+            current=$(grep -E '^version=' "$template" | sed 's/version=//' | tr -d '"')
+            [ -z "$current" ] && current="(unknown)"
+            echo "Checking $pkg (current: $current)..."
+
+            output=$(./void-packages/xbps-src update-check "$pkg" 2>/dev/null || true)
+
+            if [ -z "$output" ]; then
+              echo "$pkg: no newer version found"
+            elif echo "$output" | grep -q "^$current$"; then
+              echo "$pkg: up to date ($current)"
+            else
+              latest=$(echo "$output" | sort -V | tail -1)
+              if [ -n "$latest" ] && [ "$latest" != "$current" ]; then
+                newer=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
+                if [ "$newer" = "$latest" ]; then
+                  echo "★ $pkg: $current → $latest UPDATE AVAILABLE"
+                  echo "UPDATE:$pkg|$current|$latest"
+                fi
+              fi
+            fi
+          done | tee updates-output.txt
 
       - name: Create issue for updates
         if: always()
         run: |
-          # Parse the update output and create an issue if updates were found
           UPDATES=$(grep "^UPDATE:" updates-output.txt 2>/dev/null || true)
 
           if [ -z "$UPDATES" ]; then
@@ -56,7 +85,6 @@ jobs:
             exit 0
           fi
 
-          # Build issue body
           ISSUE_BODY="## Package updates available
 
           The following packages have newer upstream versions available:
@@ -70,10 +98,9 @@ jobs:
           done <<< "$UPDATES"
 
           ISSUE_BODY+="
-          Run \`bash scripts/update-package.sh <pkgname> <version>\` to update a package.
+          To update a package, edit its template in \`pkgs/<pkgname>/template\` and push.
           "
 
-          # Check if an update issue already exists
           EXISTING_ISSUE=$(gh issue list \
             --repo "${{ github.repository }}" \
             --label "update-check" \
@@ -82,20 +109,16 @@ jobs:
             --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$EXISTING_ISSUE" ]; then
-            # Update existing issue
             gh issue update "$EXISTING_ISSUE" \
               --repo "${{ github.repository }}" \
               --title "Package updates available ($(date +%Y-%m-%d))" \
               --body "$ISSUE_BODY" 2>/dev/null || true
-            echo "Updated existing issue #$EXISTING_ISSUE."
           else
-            # Create new issue
             gh issue create \
               --repo "${{ github.repository }}" \
               --title "Package updates available ($(date +%Y-%m-%d))" \
               --body "$ISSUE_BODY" \
               --label "update-check" 2>/dev/null || true
-            echo "Created new update issue."
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
