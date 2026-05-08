@@ -36,13 +36,14 @@ jobs:
             [ -f "$pkgdir/template" ] || continue
             pkg="$(basename "$pkgdir")"
             dst="void-packages/srcpkgs/$pkg"
-            rm -rf "$dst" && mkdir -p "$dst"
+            rm -rf "$dst"
+            mkdir -p "$dst"
             cp "$pkgdir/template" "$dst/template"
-            [ -d "$pkgdir/patches" ] && cp -r "$pkgdir/patches" "$dst/"
-            [ -d "$pkgdir/files" ] && cp -r "$pkgdir/files" "$dst/"
-            [ -f "$pkgdir/update" ] && cp "$pkgdir/update" "$dst/update"
+            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
+            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
+            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
             for extra in INSTALL REMOVE options; do
-              [ -f "$pkgdir/$extra" ] && cp "$pkgdir/$extra" "$dst/$extra"
+              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
             done
           done
 
