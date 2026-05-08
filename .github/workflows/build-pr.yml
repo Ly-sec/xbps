@@ -1,0 +1,156 @@
+name: Build PR packages
+
+on:
+  pull_request:
+    paths:
+      - 'pkgs/**'
+      - '.github/workflows/build-pr.yml'
+
+concurrency:
+  group: build-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed packages
+        id: detect
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- 'pkgs/*/template' \
+            | sed 's|/template$||' | sort -u || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No package templates changed in this PR."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changed packages:"
+            echo "$CHANGED"
+            # Write to file for later steps
+            echo "$CHANGED" > changed-packages.txt
+          fi
+
+      - name: Install xbps tools
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
+            | sudo tar xJ -C / --strip-components=1
+
+      - name: Configure xbps-uchroot
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          UCHROOT_BIN="$(command -v xbps-uchroot)"
+          if [ -z "$UCHROOT_BIN" ]; then
+            echo "xbps-uchroot not found"
+            exit 1
+          fi
+          sudo chown root:root "$UCHROOT_BIN"
+          sudo chmod 4755 "$UCHROOT_BIN"
+
+      - name: Clone upstream void-packages
+        if: steps.detect.outputs.changed == 'true'
+        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
+
+      - name: Copy overlays and bootstrap
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst"
+            mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
+            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
+            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
+            for extra in INSTALL REMOVE options; do
+              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
+            done
+          done
+
+          export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
+          export XBPS_BUILD_ENVIRONMENT="${XBPS_BUILD_ENVIRONMENT:-void-packages-ci}"
+          mkdir -p void-packages/etc
+          echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
+
+          for i in 1 2 3; do
+            if ./void-packages/xbps-src binary-bootstrap; then
+              echo "Bootstrap succeeded."
+              break
+            fi
+            echo "Bootstrap attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Build changed packages
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git -C void-packages fetch --depth=1 origin master
+          git -C void-packages reset --hard origin/master
+
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst"
+            mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
+            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
+            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
+            for extra in INSTALL REMOVE options; do
+              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
+            done
+          done
+
+          echo "failure" > build-status.txt
+          XBPS_MAKEJOBS=$(nproc)
+          BUILD_LOG=$(mktemp)
+
+          while IFS= read -r pkgdir; do
+            [ -z "$pkgdir" ] && continue
+            pkg="$(basename "$pkgdir")"
+            echo "Building $pkg..."
+
+            if ! ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1 | tee -a "$BUILD_LOG"; then
+              tail -60 "$BUILD_LOG" > build-error.txt
+              exit 1
+            fi
+          done < changed-packages.txt
+
+          echo "success" > build-status.txt
+
+      - name: Comment build result on PR
+        if: always()
+        run: |
+          if [ ! -s changed-packages.txt ]; then
+            echo "No packages changed, skipping comment."
+            exit 0
+          fi
+
+          if [ -s build-error.txt ]; then
+            ERROR=$(head -100 build-error.txt)
+            BODY=$(printf '❌ Build failed.\n\n```\n%s\n```' "$ERROR")
+          else
+            BODY="✅ Packages built successfully."
+          fi
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$BODY" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
