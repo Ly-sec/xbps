@@ -61,29 +61,27 @@ jobs:
 
       - name: Build packages
         run: |
-          overlay() {
-            for pkgdir in pkgs/*/; do
-              [ -d "$pkgdir" ] || continue
-              [ -f "$pkgdir/template" ] || continue
-              pkg="$(basename "$pkgdir")"
-              dst="void-packages/srcpkgs/$pkg"
-              rm -rf "$dst" && mkdir -p "$dst"
-              cp "$pkgdir/template" "$dst/template"
-              [ -d "$pkgdir/patches" ] && cp -r "$pkgdir/patches" "$dst/"
-              [ -d "$pkgdir/files" ] && cp -r "$pkgdir/files" "$dst/"
-              [ -f "$pkgdir/update" ] && cp "$pkgdir/update" "$dst/update"
-              for extra in INSTALL REMOVE options; do
-                [ -f "$pkgdir/$extra" ] && cp "$pkgdir/$extra" "$dst/$extra"
-              done
+          set -x
+
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst" && mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            [ -d "$pkgdir/patches" ] && cp -r "$pkgdir/patches" "$dst/"
+            [ -d "$pkgdir/files" ] && cp -r "$pkgdir/files" "$dst/"
+            [ -f "$pkgdir/update" ] && cp "$pkgdir/update" "$dst/update"
+            for extra in INSTALL REMOVE options; do
+              [ -f "$pkgdir/$extra" ] && cp "$pkgdir/$extra" "$dst/$extra"
             done
-          }
+          done
 
           export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
           export XBPS_BUILD_ENVIRONMENT="${XBPS_BUILD_ENVIRONMENT:-void-packages-ci}"
           mkdir -p void-packages/etc
           echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
-
-          overlay
 
           for i in 1 2 3; do
             if ./void-packages/xbps-src binary-bootstrap; then
@@ -96,7 +94,21 @@ jobs:
 
           git -C void-packages fetch --depth=1 origin master
           git -C void-packages reset --hard origin/master
-          overlay
+
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst" && mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            [ -d "$pkgdir/patches" ] && cp -r "$pkgdir/patches" "$dst/"
+            [ -d "$pkgdir/files" ] && cp -r "$pkgdir/files" "$dst/"
+            [ -f "$pkgdir/update" ] && cp "$pkgdir/update" "$dst/update"
+            for extra in INSTALL REMOVE options; do
+              [ -f "$pkgdir/$extra" ] && cp "$pkgdir/$extra" "$dst/$extra"
+            done
+          done
 
           XBPS_MAKEJOBS=$(nproc)
           for pkgdir in pkgs/*/; do
@@ -108,10 +120,15 @@ jobs:
 
           mkdir -p repo
           BINPKGS_DIR="void-packages/hostdir/binpkgs"
-          [ -d "$BINPKGS_DIR" ] && for f in "$BINPKGS_DIR"/*.xbps; do
-            [ -f "$f" ] && cp "$f" repo/
-          done
-          ls repo/*.xbps 1>/dev/null 2>&1 && xbps-rindex -a repo/*.xbps 2>/dev/null
+          if [ -d "$BINPKGS_DIR" ]; then
+            for f in "$BINPKGS_DIR"/*.xbps; do
+              [ -f "$f" ] || continue
+              cp "$f" repo/
+            done
+          fi
+          if ls repo/*.xbps 1>/dev/null 2>&1; then
+            xbps-rindex -a repo/*.xbps 2>/dev/null
+          fi
 
       - name: Sign repository
         env:
