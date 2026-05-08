@@ -59,6 +59,8 @@ jobs:
           ISSUE_BODY+=$'\n### Dependency changes\n\n'
           ISSUE_BODY+=$'Not determined automatically. Build and verify with `xbps-src show-rdeps`.\n'
 
+          gh label create "update-check" --repo "${{ github.repository }}" --force 2>/dev/null || true
+
           EXISTING_ISSUE=$(gh issue list \
             --repo "${{ github.repository }}" \
             --label "update-check" \
