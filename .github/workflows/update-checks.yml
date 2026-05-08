@@ -32,53 +32,50 @@ jobs:
       - name: Create issue for updates
         if: always()
         run: |
-          grep "^UPDATE:" updates-output.txt 2>/dev/null > update-lines.txt || true
+          grep "^UPDATE:" updates-output.txt > update-lines.txt || true
 
           if [ ! -s update-lines.txt ]; then
             echo "No package updates found."
             exit 0
           fi
 
-          ISSUE_BODY="## Package updates available
-
-          | Package | Current | Latest | Checksum |
-          |---------|---------|--------|----------|
-          "
+          ISSUE_BODY=$'## Package updates available\n\n'
+          ISSUE_BODY+=$'| Package | Current | Latest | Checksum |\n'
+          ISSUE_BODY+=$'|---------|---------|--------|----------|\n'
 
           while IFS='|' read -r _ pkg current latest cksum1 cksum2; do
             if [ -n "$cksum2" ]; then
-              ISSUE_BODY+="| $pkg | $current | $latest | x86_64: \`$cksum1\` / aarch64: \`$cksum2\` |\n"
+              ISSUE_BODY+="| $pkg | $current | $latest | x86_64: \`$cksum1\` / aarch64: \`$cksum2\` |"$'\n'
             elif [ -n "$cksum1" ]; then
-              ISSUE_BODY+="| $pkg | $current | $latest | \`$cksum1\` |\n"
+              ISSUE_BODY+="| $pkg | $current | $latest | \`$cksum1\` |"$'\n'
             else
-              ISSUE_BODY+="| $pkg | $current | $latest | (unknown) |\n"
+              ISSUE_BODY+="| $pkg | $current | $latest | (unknown) |"$'\n'
             fi
           done < update-lines.txt
 
-          ISSUE_BODY+="
-          ### Dependency changes
-
-          Not determined automatically. Build and verify with \`xbps-src show-rdeps\`.
-          "
+          ISSUE_BODY+=$'\n### Dependency changes\n\n'
+          ISSUE_BODY+=$'Not determined automatically. Build and verify with `xbps-src show-rdeps`.\n'
 
           EXISTING_ISSUE=$(gh issue list \
             --repo "${{ github.repository }}" \
             --label "update-check" \
             --state open \
             --json number \
-            --jq '.[0].number' 2>/dev/null || echo "")
+            --jq '.[0].number' || echo "")
+
+          echo "Existing issue: ${EXISTING_ISSUE:-none}"
 
           if [ -n "$EXISTING_ISSUE" ]; then
             gh issue update "$EXISTING_ISSUE" \
               --repo "${{ github.repository }}" \
               --title "Package updates available ($(date +%Y-%m-%d))" \
-              --body "$ISSUE_BODY" 2>/dev/null || true
+              --body "$ISSUE_BODY" || true
           else
             gh issue create \
               --repo "${{ github.repository }}" \
               --title "Package updates available ($(date +%Y-%m-%d))" \
               --body "$ISSUE_BODY" \
-              --label "update-check" 2>/dev/null || true
+              --label "update-check" || true
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
