@@ -82,7 +82,7 @@ jobs:
             git add "$template"
             git commit -m "$pkg: update to $latest"
 
-            if git push origin "$branch"; then
+            if git push origin "$branch" --force; then
               gh pr create \
                 --repo "${{ github.repository }}" \
                 --title "$pkg: update $current -> $latest" \
