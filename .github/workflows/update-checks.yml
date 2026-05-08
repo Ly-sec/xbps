@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      issues: write
-      contents: read
+      contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
             bash "$script" | tee -a updates-output.txt
           done
 
-      - name: Create issue for updates
+      - name: Create pull requests for updates
         if: always()
         run: |
           grep "^UPDATE:" updates-output.txt > update-lines.txt || true
@@ -42,45 +42,56 @@ jobs:
             exit 0
           fi
 
-          ISSUE_BODY=$'## Package updates available\n\n'
-          ISSUE_BODY+=$'| Package | Current | Latest | Checksum |\n'
-          ISSUE_BODY+=$'|---------|---------|--------|----------|\n'
+          git config user.name "Ly-sec"
+          git config user.email "void@lysec.dev"
+          BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-          while IFS='|' read -r _ pkg current latest cksum1 cksum2; do
-            if [ -n "$cksum2" ]; then
-              ISSUE_BODY+="| $pkg | $current | $latest | x86_64: \`$cksum1\` / aarch64: \`$cksum2\` |"$'\n'
-            elif [ -n "$cksum1" ]; then
-              ISSUE_BODY+="| $pkg | $current | $latest | \`$cksum1\` |"$'\n'
-            else
-              ISSUE_BODY+="| $pkg | $current | $latest | (unknown) |"$'\n'
+          while IFS='|' read -r pkg current latest cksum1 cksum2; do
+            pkg="${pkg#UPDATE:}"
+            echo "Processing $pkg: $current -> $latest"
+
+            branch="update/${pkg}-${latest}"
+
+            EXISTING_PR=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --head "$branch" \
+              --state open \
+              --json number \
+              --jq '.[0].number' || echo "")
+
+            if [ -n "$EXISTING_PR" ]; then
+              echo "PR #$EXISTING_PR already exists for $branch, skipping"
+              continue
             fi
+
+            git checkout -B "$branch"
+
+            template="pkgs/$pkg/template"
+            sed -i "s/^version=.*/version=$latest/" "$template"
+            sed -i "s/^revision=.*/revision=1/" "$template"
+
+            if [ -n "$cksum2" ]; then
+              line_nums=$(grep -n "^checksum=" "$template" | cut -d: -f1 | head -2)
+              set -- $line_nums
+              sed -i "${1}s/^checksum=.*/checksum=$cksum1/" "$template"
+              sed -i "${2}s/^checksum=.*/checksum=$cksum2/" "$template"
+            else
+              sed -i "s/^checksum=.*/checksum=$cksum1/" "$template"
+            fi
+
+            git add "$template"
+            git commit -m "$pkg: update to $latest"
+
+            if git push origin "$branch"; then
+              gh pr create \
+                --repo "${{ github.repository }}" \
+                --title "$pkg: update $current -> $latest" \
+                --body "Update $pkg from $current to $latest." \
+                --base "$BASE_BRANCH" \
+                --head "$branch" || echo "Failed to create PR for $pkg"
+            else
+              echo "Failed to push branch $branch for $pkg"
+            fi
+
+            git checkout "$BASE_BRANCH"
           done < update-lines.txt
-
-          ISSUE_BODY+=$'\n### Dependency changes\n\n'
-          ISSUE_BODY+=$'Not determined automatically. Build and verify with `xbps-src show-rdeps`.\n'
-
-          gh label create "update-check" --repo "${{ github.repository }}" --force 2>/dev/null || true
-
-          EXISTING_ISSUE=$(gh issue list \
-            --repo "${{ github.repository }}" \
-            --label "update-check" \
-            --state open \
-            --json number \
-            --jq '.[0].number' || echo "")
-
-          echo "Existing issue: ${EXISTING_ISSUE:-none}"
-
-          if [ -n "$EXISTING_ISSUE" ]; then
-            gh issue update "$EXISTING_ISSUE" \
-              --repo "${{ github.repository }}" \
-              --title "Package updates available ($(date +%Y-%m-%d))" \
-              --body "$ISSUE_BODY" || true
-          else
-            gh issue create \
-              --repo "${{ github.repository }}" \
-              --title "Package updates available ($(date +%Y-%m-%d))" \
-              --body "$ISSUE_BODY" \
-              --label "update-check" || true
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
