@@ -256,7 +256,7 @@ jobs:
             --repo "$GITHUB_REPO" \
             --title "Package repository $TAG" \
             --notes "Automated build from commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown)." \
-            repo/*.xbps repo/*.sig 2>/dev/null || true
+            repo/*.xbps repo/*.sig* 2>/dev/null || true
 
           for f in repo/*.fdb repo/*.flist; do
             [ -f "$f" ] && gh release upload "$TAG" "$f" --repo "$GITHUB_REPO" 2>/dev/null || true
