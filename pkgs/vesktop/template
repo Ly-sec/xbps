@@ -1,5 +1,5 @@
 pkgname=vesktop
-version=1.6.1
+version=1.6.5
 revision=1
 archs="x86_64"
 hostmakedepends="tar xz"
@@ -8,7 +8,7 @@ short_desc="Vesktop"
 homepage="https://github.com/Vencord/Vesktop"
 license="GPL-3.0-only"
 distfiles="https://github.com/Vencord/Vesktop/releases/download/v${version}/vesktop_${version}_amd64.deb"
-checksum=defe0ee54d700c838f56aa3c348294bac91d23cd27333f511ceb6a6f664c6852
+checksum=2d4c97abe4810703561d59c63cb12b1926f591fe1fe2bf9e914db66c6cc31cf5
 
 do_extract() {
 	ar x ${XBPS_SRCDISTDIR}/${pkgname}-${version}/vesktop_${version}_amd64.deb
