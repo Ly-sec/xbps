@@ -102,14 +102,6 @@ cat > "$OUT" << 'HTML'
     border-bottom: 1px solid var(--border);
     user-select: none;
   }
-  .term-dots { display: flex; gap: 7px; }
-  .term-dot {
-    width: 12px; height: 12px;
-    border-radius: 50%;
-  }
-  .term-dot.close { background: var(--red); }
-  .term-dot.min  { background: var(--orange); }
-  .term-dot.max  { background: var(--green); }
   .term-title {
     font-size: 0.8rem;
     color: var(--text-muted);
@@ -253,9 +245,7 @@ cat > "$OUT" << 'HTML'
   }
   .pkg-name {
     font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-word;
   }
   .pkg-version {
     color: var(--text-muted);
@@ -268,19 +258,52 @@ cat > "$OUT" << 'HTML'
     font-size: 0.75rem;
     line-height: 1.4;
     padding-left: 24px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
   }
 
+  .pkg-section {
+    margin: 10px 0 0;
+  }
   .section-label {
-    grid-column: 1 / -1;
     color: var(--text-muted);
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin-top: 4px;
-    padding: 6px 0 2px;
+    padding: 6px 0 4px;
+    user-select: none;
+  }
+  .pkg-scroll {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px;
+  }
+  .pkg-scroll .pkg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+  }
+
+  .search-bar {
+    display: block;
+    width: 100%;
+    margin: 12px 0 0;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-bar:focus {
+    border-color: var(--cyan);
+  }
+  .search-bar::placeholder {
+    color: var(--text-muted);
     user-select: none;
   }
 
@@ -325,11 +348,6 @@ cat > "$OUT" << 'HTML'
 <div class="terminal">
 
   <div class="term-bar">
-    <div class="term-dots">
-      <span class="term-dot close"></span>
-      <span class="term-dot min"></span>
-      <span class="term-dot max"></span>
-    </div>
     <div class="term-title">xbps - lysec@void:~</div>
   </div>
 
@@ -370,7 +388,8 @@ cat > "$OUT" << 'HTML'
       <span class="cmd">ls packages/</span>
     </div>
     <div class="output">
-      <div class="pkg-grid">
+      <input type="text" class="search-bar" placeholder="filter packages..." oninput="filterPackages(this.value)">
+
 HTML
 
 write_card() {
@@ -396,19 +415,26 @@ ITEM
 }
 
 if [ ${#BUILT_PKGS[@]} -gt 0 ]; then
+  echo '      <div class="pkg-section">' >> "$OUT"
   echo '        <span class="section-label">built</span>' >> "$OUT"
+  echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
   for template in "${BUILT_PKGS[@]}"; do
     write_card "$template" "built"
   done
+  echo '        </div></div>' >> "$OUT"
+  echo '      </div>' >> "$OUT"
 fi
 
+echo '      <div class="pkg-section">' >> "$OUT"
 echo '        <span class="section-label">available</span>' >> "$OUT"
+echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
 for template in "${AVAIL_PKGS[@]}"; do
   write_card "$template" ""
 done
+echo '        </div></div>' >> "$OUT"
+echo '      </div>' >> "$OUT"
 
 cat >> "$OUT" << 'HTML'
-      </div>
     </div>
 
     <div class="line cursor-line">
@@ -423,6 +449,24 @@ cat >> "$OUT" << 'HTML'
   </div>
 
 </div>
+
+<script>
+function filterPackages(query) {
+  var q = query.toLowerCase();
+  document.querySelectorAll('.pkg-section').forEach(function(section) {
+    var cards = section.querySelectorAll('.pkg-item');
+    var visible = false;
+    cards.forEach(function(card) {
+      var name = card.querySelector('.pkg-name').textContent.toLowerCase();
+      var desc = card.querySelector('.pkg-desc').textContent.toLowerCase();
+      var match = name.indexOf(q) !== -1 || desc.indexOf(q) !== -1;
+      card.style.display = match ? '' : 'none';
+      if (match) visible = true;
+    });
+    section.style.display = visible || q === '' ? '' : 'none';
+  });
+}
+</script>
 
 </body>
 </html>
