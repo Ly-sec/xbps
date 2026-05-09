@@ -12,6 +12,7 @@ on:
     paths:
       - 'pkgs/**'
       - '.github/workflows/build.yml'
+      - 'scripts/generate-index.sh'
   workflow_dispatch:
     inputs:
       publish_release:
