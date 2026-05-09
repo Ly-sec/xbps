@@ -5,6 +5,7 @@ repo/*.fdb
 repo/*.flist
 repo/*-repodata
 !repo/README.md
+public/
 void-packages/
 .tmp/
 keys/

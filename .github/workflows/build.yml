@@ -227,16 +227,12 @@ jobs:
           fi
 
       - name: Prepare Pages artifact
-        if: steps.build.outputs.packages_built == 'true'
         run: |
           rm -rf public
           mkdir -p public/keys
-          cp -a repo/. public/
+          cp -a repo/. public/ 2>/dev/null || true
           if [ -f keys/pub.pem ]; then
             cp keys/pub.pem public/keys/pub.pem
-          else
-            echo "keys/pub.pem not found after signing"
-            exit 1
           fi
           touch public/.nojekyll
           bash scripts/generate-index.sh public
@@ -254,7 +250,6 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload Pages artifact
-        if: steps.build.outputs.packages_built == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
@@ -289,7 +284,7 @@ jobs:
   deploy-pages:
     runs-on: ubuntu-latest
     needs: build
-    if: ${{ github.ref == 'refs/heads/main' && needs.build.outputs.packages_built == 'true' }}
+    if: ${{ github.ref == 'refs/heads/main' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

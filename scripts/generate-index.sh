@@ -8,13 +8,37 @@ PUBLIC_DIR="${1:?Usage: $0 <public-directory>}"
 
 OUT="$PUBLIC_DIR/index.html"
 
-# shellcheck disable=SC2317
 extract() {
   local file="$1" key="$2"
   grep -E "^${key}=" "$file" 2>/dev/null | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"$//"
 }
 
-# ---- HTML head and terminal body opening ----
+# Build set of pkgnames that have an xbps in PUBLIC_DIR
+declare -A BUILT
+while IFS= read -r f; do
+  name=$(basename "$f")
+  stripped="${name%.x86_64.xbps}"
+  stripped="${stripped%.aarch64.xbps}"
+  stripped="${stripped%.noarch.xbps}"
+  pkgname="${stripped%-*}"
+  BUILT["$pkgname"]=1
+done < <(find "$PUBLIC_DIR" -maxdepth 1 -type f -name '*.xbps' 2>/dev/null)
+
+# Read all package templates and separate built vs not built
+BUILT_PKGS=()
+AVAIL_PKGS=()
+while IFS= read -r template; do
+  pkgdir=$(dirname "$template")
+  pkgname=$(basename "$pkgdir")
+  desc=$(extract "$template" short_desc)
+  [ -n "$desc" ] || continue
+  if [ "${BUILT["$pkgname"]+set}" = "set" ]; then
+    BUILT_PKGS+=("$template")
+  else
+    AVAIL_PKGS+=("$template")
+  fi
+done < <(find pkgs/ -mindepth 2 -maxdepth 2 -name template -type f | sort)
+
 cat > "$OUT" << 'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -208,6 +232,10 @@ cat > "$OUT" << 'HTML'
     border-color: var(--text-muted);
   }
 
+  .pkg-item.built {
+    border-left: 3px solid var(--green);
+  }
+
   .pkg-icon {
     flex-shrink: 0;
     width: 14px;
@@ -243,6 +271,17 @@ cat > "$OUT" << 'HTML'
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .section-label {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+    padding: 6px 0 2px;
+    user-select: none;
   }
 
   .cursor-line { margin-top: 18px; }
@@ -334,34 +373,40 @@ cat > "$OUT" << 'HTML'
       <div class="pkg-grid">
 HTML
 
-# iterate over pkgs/ directories
-while IFS= read -r template; do
+write_card() {
+  local template="$1" css_class="$2"
+  local pkgdir desc version revision homepage pkgver pkgname
   pkgdir=$(dirname "$template")
   pkgname=$(basename "$pkgdir")
-
   desc=$(extract "$template" short_desc)
   version=$(extract "$template" version)
   revision=$(extract "$template" revision)
   homepage=$(extract "$template" homepage)
-
-  # skip if no short_desc (not a real package template)
-  [ -n "$desc" ] || continue
-
   pkgver="${version}_${revision}"
-
   cat >> "$OUT" << ITEM
-        <a class="pkg-item" href="${homepage:-#}">
+        <a class="pkg-item ${css_class}" href="${homepage:-#}">
           <div class="pkg-header">
             <span class="pkg-icon">#</span>
-            <span class="pkg-name">$pkgname</span>
-            <span class="pkg-version">$pkgver</span>
+            <span class="pkg-name">${pkgname}</span>
+            <span class="pkg-version">${pkgver}</span>
           </div>
-          <span class="pkg-desc">$desc</span>
+          <span class="pkg-desc">${desc}</span>
         </a>
 ITEM
-done < <(find pkgs/ -mindepth 2 -maxdepth 2 -name template -type f | sort)
+}
 
-# close html
+if [ ${#BUILT_PKGS[@]} -gt 0 ]; then
+  echo '        <span class="section-label">built</span>' >> "$OUT"
+  for template in "${BUILT_PKGS[@]}"; do
+    write_card "$template" "built"
+  done
+fi
+
+echo '        <span class="section-label">available</span>' >> "$OUT"
+for template in "${AVAIL_PKGS[@]}"; do
+  write_card "$template" ""
+done
+
 cat >> "$OUT" << 'HTML'
       </div>
     </div>
