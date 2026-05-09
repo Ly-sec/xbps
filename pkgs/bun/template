@@ -1,0 +1,37 @@
+# Template file for 'bun'
+pkgname=bun
+version=1.3.13
+revision=1
+archs="x86_64 aarch64"
+hostmakedepends="unzip"
+short_desc="Incredibly fast JavaScript runtime, bundler, transpiler and package manager"
+maintainer="Ly-sec <void@lysec.dev>"
+homepage="https://bun.sh"
+license="MIT"
+hardening_options="!pie"
+nopie=yes
+
+case "$XBPS_TARGET_MACHINE" in
+ x86_64)
+  distfiles="https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-linux-x64.zip"
+  checksum=79c0771fa8b92c33aae41e15a0e0d307ea99d0e2f00317c71c6c53237a78e25a
+  ;;
+ aarch64)
+  distfiles="https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-linux-aarch64.zip"
+  checksum=70bae41b3908b0a120e1e58c5c8af30e74afae3b8d11b0d3fdd8e787ddfb4b22
+  ;;
+esac
+
+do_extract() {
+	mkdir -p "${wrksrc}"
+	cd "${wrksrc}"
+	unzip -q "${XBPS_SRCDISTDIR}/${pkgname}-${version}/$(basename ${distfiles})"
+	find . -mindepth 2 -name bun -type f -exec mv {} . \;
+	rm -rf bun-linux-*
+}
+
+do_install() {
+	install -dm755 "${DESTDIR}/usr/bin"
+	cp "${wrksrc}/bun" "${DESTDIR}/usr/bin/bun"
+	chmod 755 "${DESTDIR}/usr/bin/bun"
+}

@@ -1,0 +1,12 @@
+hostdir/
+repo/*.xbps
+repo/*.sig
+repo/*.fdb
+repo/*.flist
+repo/*-repodata
+!repo/README.md
+void-packages/
+.tmp/
+keys/
+.DS_Store
+Thumbs.db

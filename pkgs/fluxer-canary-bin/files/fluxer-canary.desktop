@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Fluxer Canary
+Comment=Fluxer Canary Desktop Application
+Exec=fluxer-canary
+Icon=fluxer-canary
+Terminal=false
+Type=Application
+Categories=Network;InstantMessaging;
+StartupWMClass=Fluxer Canary

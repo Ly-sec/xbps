@@ -1,0 +1,300 @@
+name: Build packages
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkgs/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish signed packages to GitHub Releases'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XBPS_TARGET_ARCH: x86_64
+  XBPS_ALLOW_RESTRICTED: yes
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      packages_built: ${{ steps.build.outputs.packages_built }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install xbps tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
+            | sudo tar xJ -C / --strip-components=1
+
+      - name: Configure xbps-uchroot
+        run: |
+          UCHROOT_BIN="$(command -v xbps-uchroot)"
+          if [ -z "$UCHROOT_BIN" ]; then
+            echo "xbps-uchroot not found"
+            exit 1
+          fi
+          sudo chown root:root "$UCHROOT_BIN"
+          sudo chmod 4755 "$UCHROOT_BIN"
+
+      - name: Clone upstream void-packages
+        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
+
+      - name: Build packages
+        id: build
+        run: |
+          git -C void-packages fetch --depth=1 origin master
+          git -C void-packages reset --hard origin/master
+
+          # Run update scripts for packages with placeholder versions
+          for pkgdir in pkgs/*/; do
+            [ -f "$pkgdir/update" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            if grep -q '^version=0$' "$pkgdir/template"; then
+              echo "Running update for $(basename "$pkgdir")..."
+              (cd "$pkgdir" && ./update)
+            fi
+          done
+
+          for pkgdir in pkgs/*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="void-packages/srcpkgs/$pkg"
+            rm -rf "$dst"
+            mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
+            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
+            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
+            for extra in INSTALL REMOVE options; do
+              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
+            done
+          done
+          for f in pkgs/*; do
+            [ -f "$f" ] || [ -L "$f" ] || continue
+            cp -P "$f" "void-packages/srcpkgs/$(basename "$f")"
+          done
+
+          # Copy custom shlibs into void-packages so dependency resolution works
+          if [ -f pkgs/common/shlibs ]; then
+            cat pkgs/common/shlibs >> void-packages/common/shlibs
+          fi
+
+          # Detect changed packages
+          BEFORE="${{ github.event.before }}"
+          REBUILD_ALL=false
+
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "First push, rebuilding all packages"
+            REBUILD_ALL=true
+          fi
+
+          if [ "$REBUILD_ALL" = "false" ]; then
+            INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
+            if [ -n "$INFRA" ]; then
+              echo "Infrastructure files changed, rebuilding all packages"
+              echo "Changed: $INFRA"
+              REBUILD_ALL=true
+            fi
+          fi
+
+          if [ "$REBUILD_ALL" = "true" ]; then
+            for d in pkgs/*/; do
+              [ -f "$d/template" ] && basename "$d"
+            done | sort > changed-packages.txt
+          else
+            > changed-packages.txt
+            git diff --name-only "$BEFORE"...HEAD -- pkgs/*/template \
+              | sed 's|/template$||' \
+              | while read -r p; do basename "$p"; done >> changed-packages.txt
+            git diff --name-only HEAD -- pkgs/*/template \
+              | sed 's|/template$||' \
+              | while read -r p; do basename "$p"; done >> changed-packages.txt
+            sort -u changed-packages.txt -o changed-packages.txt
+          fi
+
+          echo "Packages to build:"
+          cat changed-packages.txt
+
+          export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
+          export XBPS_BUILD_ENVIRONMENT="${XBPS_BUILD_ENVIRONMENT:-void-packages-ci}"
+          mkdir -p void-packages/etc
+          echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
+
+          for i in 1 2 3; do
+            if ./void-packages/xbps-src binary-bootstrap; then
+              echo "Bootstrap succeeded."
+              break
+            fi
+            echo "Bootstrap attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+
+          XBPS_MAKEJOBS=$(nproc)
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg"
+          done < changed-packages.txt
+
+          mkdir -p repo
+          BINPKGS_DIR="void-packages/hostdir/binpkgs"
+          if [ -d "$BINPKGS_DIR" ]; then
+            for f in "$BINPKGS_DIR"/*.xbps; do
+              [ -f "$f" ] || continue
+              cp "$f" repo/
+            done
+          fi
+          if ls repo/*.xbps 1>/dev/null 2>&1; then
+            xbps-rindex -a repo/*.xbps 2>/dev/null
+            echo "packages_built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packages_built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign repository
+        if: steps.build.outputs.packages_built == 'true'
+        env:
+          XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
+          XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
+          XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
+        run: |
+          if [ ! -d repo ] || [ -z "$(ls repo/*.xbps 2>/dev/null)" ]; then
+            echo "No .xbps files found in repo/. Build packages first."
+            exit 1
+          fi
+          if [ -z "$XBPS_SIGNEDBY" ]; then
+            echo "Error: XBPS_SIGNEDBY is not set."
+            exit 1
+          fi
+
+          mkdir -p keys
+          if [ -n "$XBPS_PUBKEY" ]; then
+            if [ -f "$XBPS_PUBKEY" ]; then
+              cp "$XBPS_PUBKEY" keys/pub.pem
+            elif echo "$XBPS_PUBKEY" | grep -q "^-----BEGIN"; then
+              echo "$XBPS_PUBKEY" > keys/pub.pem
+            fi
+            chmod 644 keys/pub.pem 2>/dev/null || true
+          fi
+
+          KEY_ARG=""
+          if [ -n "$XBPS_PRIVKEY" ]; then
+            if [ -f "$XBPS_PRIVKEY" ]; then
+              KEY_ARG="--privkey $XBPS_PRIVKEY"
+            elif echo "$XBPS_PRIVKEY" | grep -q "^-----BEGIN"; then
+              TMP_KEY=$(mktemp /tmp/xbps-privkey.XXXXXXXXXX.pem)
+              trap 'rm -f "$TMP_KEY"' EXIT
+              echo "$XBPS_PRIVKEY" > "$TMP_KEY"
+              chmod 600 "$TMP_KEY"
+              KEY_ARG="--privkey $TMP_KEY"
+            fi
+          fi
+
+          SIGN_CMD=(xbps-rindex --sign --signedby "$XBPS_SIGNEDBY")
+          [ -n "$KEY_ARG" ] && SIGN_CMD+=(--privkey "${KEY_ARG#--privkey }")
+          SIGN_CMD+=(repo)
+
+          echo "Signing repository as \"$XBPS_SIGNEDBY\"..."
+          "${SIGN_CMD[@]}"
+
+          if [ -n "$KEY_ARG" ]; then
+            for pkg in repo/*.xbps; do
+              [ -f "$pkg" ] || continue
+              xbps-rindex --sign-pkg --signedby "$XBPS_SIGNEDBY" --privkey "${KEY_ARG#--privkey }" "$pkg" 2>/dev/null || true
+            done
+          fi
+
+      - name: Prepare Pages artifact
+        if: steps.build.outputs.packages_built == 'true'
+        run: |
+          rm -rf public
+          mkdir -p public/keys
+          cp -a repo/. public/
+          if [ -f keys/pub.pem ]; then
+            cp keys/pub.pem public/keys/pub.pem
+          else
+            echo "keys/pub.pem not found after signing"
+            exit 1
+          fi
+          touch public/.nojekyll
+          bash scripts/generate-index.sh public
+
+      - name: Upload built repository artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xbps-repo-${{ github.run_number }}
+          path: |
+            repo/*.xbps
+            repo/*.sig*
+            repo/*.fdb*
+            repo/*.flist*
+            keys/pub.pem
+          if-no-files-found: warn
+
+      - name: Upload Pages artifact
+        if: steps.build.outputs.packages_built == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Publish to GitHub Releases
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          if ! command -v gh &>/dev/null; then echo "Error: gh not found"; exit 1; fi
+          if ! gh auth status 2>/dev/null; then echo "Error: not authenticated"; exit 1; fi
+
+          TAG="repo-$(date +%Y%m%d)-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+          echo "Publishing release $TAG..."
+
+          gh release view "$TAG" --repo "$GITHUB_REPO" &>/dev/null && \
+            gh release delete "$TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null || true
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPO" \
+            --title "Package repository $TAG" \
+            --notes "Automated build from commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown)." \
+            repo/*.xbps repo/*.sig* 2>/dev/null || true
+
+          for f in repo/*.fdb repo/*.flist; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --repo "$GITHUB_REPO" 2>/dev/null || true
+          done
+
+          [ -f keys/pub.pem ] && gh release upload "$TAG" keys/pub.pem --repo "$GITHUB_REPO" 2>/dev/null || true
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' && needs.build.outputs.packages_built == 'true' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4

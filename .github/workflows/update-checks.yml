@@ -1,0 +1,99 @@
+name: Check package updates
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: update-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run update scripts
+        id: updates
+        run: |
+          for script in pkgs/*/update; do
+            [ -f "$script" ] || continue
+            pkg="$(basename "$(dirname "$script")")"
+            echo "Checking $pkg..."
+            bash "$script" | tee -a updates-output.txt
+          done
+
+      - name: Create pull requests for updates
+        if: always()
+        run: |
+          grep "^UPDATE:" updates-output.txt > update-lines.txt || true
+
+          if [ ! -s update-lines.txt ]; then
+            echo "No package updates found."
+            exit 0
+          fi
+
+          git config user.name "Ly-sec"
+          git config user.email "void@lysec.dev"
+          BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+          while IFS='|' read -r pkg current latest cksum1 cksum2; do
+            pkg="${pkg#UPDATE:}"
+            echo "Processing $pkg: $current -> $latest"
+
+            branch="update/${pkg}-${latest}"
+
+            EXISTING_PR=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --head "$branch" \
+              --state open \
+              --json number \
+              --jq '.[0].number' || echo "")
+
+            if [ -n "$EXISTING_PR" ]; then
+              echo "PR #$EXISTING_PR already exists for $branch, skipping"
+              continue
+            fi
+
+            git checkout -B "$branch"
+
+            template="pkgs/$pkg/template"
+            sed -i "s/^version=.*/version=$latest/" "$template"
+            sed -i "s/^revision=.*/revision=1/" "$template"
+
+            if [ -n "$cksum2" ]; then
+              line_nums=$(grep -n "^checksum=" "$template" | cut -d: -f1 | head -2)
+              set -- $line_nums
+              sed -i "${1}s/^checksum=.*/checksum=$cksum1/" "$template"
+              sed -i "${2}s/^checksum=.*/checksum=$cksum2/" "$template"
+            else
+              sed -i "s/^checksum=.*/checksum=$cksum1/" "$template"
+            fi
+
+            git add "$template"
+            git commit -m "$pkg: update to $latest"
+
+            if git push origin "$branch" --force; then
+              gh pr create \
+                --repo "${{ github.repository }}" \
+                --title "$pkg: update $current -> $latest" \
+                --body "Update $pkg from $current to $latest." \
+                --base "$BASE_BRANCH" \
+                --head "$branch" || echo "Failed to create PR for $pkg"
+            else
+              echo "Failed to push branch $branch for $pkg"
+            fi
+
+            git checkout "$BASE_BRANCH"
+          done < update-lines.txt
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}

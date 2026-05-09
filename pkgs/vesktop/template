@@ -1,0 +1,21 @@
+pkgname=vesktop
+version=1.6.1
+revision=1
+archs="x86_64"
+hostmakedepends="tar xz"
+maintainer="Ly-sec <void@lysec.dev>"
+short_desc="Vesktop"
+homepage="https://github.com/Vencord/Vesktop"
+license="GPL-3.0-only"
+distfiles="https://github.com/Vencord/Vesktop/releases/download/v${version}/vesktop_${version}_amd64.deb"
+checksum=defe0ee54d700c838f56aa3c348294bac91d23cd27333f511ceb6a6f664c6852
+
+do_extract() {
+	ar x ${XBPS_SRCDISTDIR}/${pkgname}-${version}/vesktop_${version}_amd64.deb
+	tar xf data.tar.xz -C ${wrksrc}
+}
+
+do_install() {
+	cp -r "$wrksrc"/usr "$DESTDIR"/
+	cp -r "$wrksrc"/opt "$DESTDIR"/
+}

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=bun
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -sL "https://api.github.com/repos/oven-sh/bun/releases/latest" \
+  | grep '"tag_name"' | sed 's/.*bun-v//;s/".*//' | head -1)
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+# Get checksums for both architectures
+x64_url="https://github.com/oven-sh/bun/releases/download/bun-v${latest}/bun-linux-x64.zip"
+aarch64_url="https://github.com/oven-sh/bun/releases/download/bun-v${latest}/bun-linux-aarch64.zip"
+x64_checksum=$(curl -sL --max-time 120 "$x64_url" | sha256sum | cut -d' ' -f1)
+aarch64_checksum=$(curl -sL --max-time 120 "$aarch64_url" | sha256sum | cut -d' ' -f1)
+
+echo "UPDATE:$pkgname|$current|$latest|x64:$x64_checksum|aarch64:$aarch64_checksum"

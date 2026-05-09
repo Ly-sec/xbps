@@ -1,0 +1,39 @@
+# Template file for 'equibop'
+pkgname=equibop
+version=3.2.0
+revision=1
+archs="x86_64 aarch64"
+wrksrc="Equibop-${version}"
+hostmakedepends="bun nodejs npm cmake"
+depends="electron40"
+short_desc="A custom Discord desktop app with Equicord pre-installed"
+maintainer="Ly-sec <void@lysec.dev>"
+homepage="https://github.com/Equicord/Equibop"
+license="GPL-3.0-only"
+conflicts="equibop-bin"
+nostrip=yes
+distfiles="https://github.com/Equicord/Equibop/archive/refs/tags/v${version}.tar.gz"
+checksum=7592a8fdb9470e5b9b7366f9a1803c6ee605e6f25861e1836041094077e94a9b
+
+do_build() {
+	cd "${wrksrc}"
+	export SKIP_BUN_DOWNLOAD=true
+	CI=true bun install
+	bun run buildLibVesktop
+	bun run package:dir
+}
+
+do_install() {
+	install -dm755 "${DESTDIR}/usr/lib/${pkgname}"
+	cp "${wrksrc}/dist/linux-unpacked/resources/app.asar" "${DESTDIR}/usr/lib/${pkgname}/"
+	cp "${wrksrc}/dist/linux-unpacked/resources/app-update.yml" "${DESTDIR}/usr/lib/${pkgname}/"
+	cp -r "${wrksrc}/dist/linux-unpacked/resources/arrpc" "${DESTDIR}/usr/lib/${pkgname}/"
+
+	install -dm755 "${DESTDIR}/usr/bin"
+	cp "${FILESDIR}/equibop.sh" "${DESTDIR}/usr/bin/equibop"
+	chmod 755 "${DESTDIR}/usr/bin/equibop"
+
+	install -Dm644 "${FILESDIR}/equibop.desktop" "${DESTDIR}/usr/share/applications/equibop.desktop"
+	install -Dm644 "${wrksrc}/static/icon.png" "${DESTDIR}/usr/share/pixmaps/${pkgname}.png"
+	vlicense "${wrksrc}/LICENSE"
+}

@@ -1,0 +1,17 @@
+pkgname=lefthook
+version=2.0.1
+revision=1
+build_style=go
+go_import_path="github.com/evilmartians/lefthook/v2"
+hostmakedepends="go git"
+maintainer="Ly-sec <itslysec@gmail.com>"
+short_desc="Git hooks manager"
+homepage="https://github.com/evilmartians/lefthook"
+license="MIT"
+
+distfiles="https://github.com/evilmartians/lefthook/archive/refs/tags/v${version}.tar.gz"
+checksum=d23c05f0ce9825888fa088c5a27610e8d08043fc0c0682de170585f29644afbb
+
+do_install() {
+	install -Dm755 "$GOPATH/bin/lefthook" "$DESTDIR/usr/bin/lefthook"
+}

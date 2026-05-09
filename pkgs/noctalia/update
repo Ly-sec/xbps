@@ -1,0 +1,14 @@
+#!/bin/sh
+# Resolves the latest commit on the v5 branch and writes it
+# into the template so xbps-src gets the correct version at parse time.
+set -e
+
+SHA=$(curl -s "https://api.github.com/repos/noctalia-dev/noctalia-shell/git/refs/heads/v5" | awk -F'"' '/"sha"/{print $4;exit}' | cut -c1-7)
+
+if [ -z "$SHA" ]; then
+	echo "Failed to resolve commit SHA"
+	exit 1
+fi
+
+sed -i "s/^version=.*/version=${SHA}/" "$(dirname "$0")/template"
+echo "${SHA}"

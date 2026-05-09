@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=lefthook
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -sL "https://api.github.com/repos/evilmartians/lefthook/releases/latest" \
+  | grep '"tag_name"' | sed 's/.*"v//;s/".*//' | head -1)
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+url="https://github.com/evilmartians/lefthook/archive/refs/tags/v${latest}.tar.gz"
+checksum=$(curl -sL --max-time 120 "$url" | sha256sum | cut -d' ' -f1)
+
+echo "UPDATE:$pkgname|$current|$latest|$checksum"
