@@ -7,7 +7,7 @@ maintainer="Ly-sec <void@lysec.dev>"
 license="BSD-3-Clause, MIT, Apache-2.0"
 homepage="https://electronjs.org"
 distfiles="https://github.com/electron/electron/releases/download/v${version}/electron-v${version}-linux-x64.zip"
-checksum=25d2b065892bbbc36bf5bbd8ca01e4e35372e6dca06563aca45b5ec490bf34ba
+checksum=35efe7401822e8d2e474e13788a6191362c7494dd1f7ae327b70087e0768a667
 nostrip=yes
 noverify=yes
 
