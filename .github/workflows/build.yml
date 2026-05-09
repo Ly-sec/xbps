@@ -137,6 +137,14 @@ jobs:
             git diff --name-only HEAD -- pkgs/*/template \
               | sed 's|/template$||' \
               | while read -r p; do basename "$p"; done >> changed-packages.txt
+            # Also build packages that have no existing xbps
+            for d in pkgs/*/; do
+              [ -f "$d/template" ] || continue
+              pkg=$(basename "$d")
+              if ! ls repo/${pkg}-*.xbps >/dev/null 2>&1; then
+                echo "$pkg" >> changed-packages.txt
+              fi
+            done
             sort -u changed-packages.txt -o changed-packages.txt
           fi
 

@@ -1,49 +1,3 @@
-#!/bin/bash
-# Generate index.html for the xbps Void package repository
-set -euo pipefail
-
-PUBLIC_DIR="${1:?Usage: $0 <public-directory>}"
-
-[ -d "$PUBLIC_DIR" ] || { echo "Error: directory '$PUBLIC_DIR' not found"; exit 1; }
-
-OUT="$PUBLIC_DIR/index.html"
-
-extract() {
-  local file="$1" key="$2"
-  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"$//"
-}
-
-# Build set of pkgnames that have an xbps in PUBLIC_DIR
-declare -A BUILT
-declare -A SIGNED
-while IFS= read -r f; do
-  name=$(basename "$f")
-  stripped="${name%.x86_64.xbps}"
-  stripped="${stripped%.aarch64.xbps}"
-  stripped="${stripped%.noarch.xbps}"
-  pkgname="${stripped%-*}"
-  BUILT["$pkgname"]=1
-  if [ -f "${f}.sig" ]; then
-    SIGNED["$pkgname"]=1
-  fi
-done < <(find "$PUBLIC_DIR" -maxdepth 1 -type f -name '*.xbps' 2>/dev/null)
-
-# Read all package templates and separate built vs not built
-BUILT_PKGS=()
-AVAIL_PKGS=()
-while IFS= read -r template; do
-  pkgdir=$(dirname "$template")
-  pkgname=$(basename "$pkgdir")
-  desc=$(extract "$template" short_desc)
-  [ -n "$desc" ] || continue
-  if [ "${BUILT["$pkgname"]+set}" = "set" ]; then
-    BUILT_PKGS+=("$template")
-  else
-    AVAIL_PKGS+=("$template")
-  fi
-done < <(find pkgs/ -mindepth 2 -maxdepth 2 -name template -type f | sort)
-
-cat > "$OUT" << 'HTML'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -204,75 +158,89 @@ cat > "$OUT" << 'HTML'
     letter-spacing: 0.04em;
   }
 
+  .pkg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin: 10px 0 0;
+  }
+
+  .pkg-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-decoration: none;
+    color: var(--text);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .pkg-item:hover {
+    background: var(--bg-alt);
+    border-color: var(--text-muted);
+  }
+
+  .pkg-item.built {
+    border-left: 3px solid var(--green);
+  }
+
+  .pkg-icon {
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+    color: var(--cyan);
+    font-size: 0.85rem;
+    user-select: none;
+  }
+
+  .pkg-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .pkg-name {
+    font-weight: 500;
+    word-break: break-word;
+  }
+  .pkg-version {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .pkg-desc {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding-left: 24px;
+    word-break: break-word;
+  }
+
   .pkg-section {
-    margin: 8px 0 0;
+    margin: 10px 0 0;
   }
   .section-label {
     color: var(--text-muted);
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    padding: 4px 0 2px;
+    padding: 6px 0 4px;
     user-select: none;
   }
   .pkg-scroll {
-    max-height: 300px;
+    max-height: 260px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 4px 8px;
+    padding: 8px;
   }
-
-  .pkg-grid {
+  .pkg-scroll .pkg-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1px;
-  }
-
-  .pkg-item {
-    display: block;
-    padding: 2px 4px;
-    text-decoration: none;
-    color: var(--text);
-    font-size: 0.78rem;
-    line-height: 1.6;
-    border-radius: 2px;
-    transition: background 0.1s;
-  }
-  .pkg-item:hover {
-    background: var(--surface);
-  }
-
-  .pkg-icon {
-    color: var(--cyan);
-    margin-right: 2px;
-    user-select: none;
-  }
-
-  .pkg-name {
-    font-weight: 500;
-  }
-  .pkg-name.signed::after {
-    content: " [signed]";
-    color: var(--green);
-    font-size: 0.65rem;
-    font-weight: 400;
-  }
-
-  .pkg-version {
-    color: var(--text-muted);
-    margin-left: 4px;
-  }
-  .pkg-version::before {
-    content: " ";
-  }
-
-  .pkg-desc {
-    color: var(--text-muted);
-    margin-left: 6px;
-  }
-  .pkg-desc::before {
-    content: "\00a0\002d\00a0";
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
   }
 
   .search-bar {
@@ -380,52 +348,96 @@ cat > "$OUT" << 'HTML'
     <div class="output">
       <input type="text" class="search-bar" placeholder="filter packages..." oninput="filterPackages(this.value)">
 
-HTML
-
-write_card() {
-  local template="$1" css_class="$2" pkgname="$3" signed="$4"
-  local desc version revision homepage pkgver
-  desc=$(extract "$template" short_desc)
-  version=$(extract "$template" version)
-  revision=$(extract "$template" revision)
-  homepage=$(extract "$template" homepage)
-  pkgver="${version}_${revision}"
-  local signed_class=""
-  [ "$signed" = "1" ] && signed_class="signed"
-  cat >> "$OUT" << ITEM
-        <a class="pkg-item ${css_class}" href="${homepage:-#}">
-          <span class="pkg-icon">#</span>
-          <span class="pkg-name ${signed_class}">${pkgname}</span>
-          <span class="pkg-version">${pkgver}</span>
-          <span class="pkg-desc">${desc}</span>
+      <div class="pkg-section">
+        <span class="section-label">built</span>
+        <div class="pkg-scroll"><div class="pkg-grid">
+        <a class="pkg-item built" href="https://github.com/frewacom/pywalfox">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">python-pywalfox</span>
+            <span class="pkg-version">2.7.4_1</span>
+          </div>
+          <span class="pkg-desc">Native app used alongside the Pywalfox browser extension</span>
         </a>
-ITEM
-}
-
-if [ ${#BUILT_PKGS[@]} -gt 0 ]; then
-  echo '      <div class="pkg-section">' >> "$OUT"
-  echo '        <span class="section-label">built</span>' >> "$OUT"
-  echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
-  for template in "${BUILT_PKGS[@]}"; do
-    pkgname=$(basename "$(dirname "$template")")
-    signed="${SIGNED["$pkgname"]:-0}"
-    write_card "$template" "built" "$pkgname" "$signed"
-  done
-  echo '        </div></div>' >> "$OUT"
-  echo '      </div>' >> "$OUT"
-fi
-
-echo '      <div class="pkg-section">' >> "$OUT"
-echo '        <span class="section-label">available</span>' >> "$OUT"
-echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
-for template in "${AVAIL_PKGS[@]}"; do
-  pkgname=$(basename "$(dirname "$template")")
-  write_card "$template" "" "$pkgname" "0"
-done
-echo '        </div></div>' >> "$OUT"
-echo '      </div>' >> "$OUT"
-
-cat >> "$OUT" << 'HTML'
+        </div></div>
+      </div>
+      <div class="pkg-section">
+        <span class="section-label">available</span>
+        <div class="pkg-scroll"><div class="pkg-grid">
+        <a class="pkg-item " href="https://bun.sh">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">bun</span>
+            <span class="pkg-version">1.3.13_1</span>
+          </div>
+          <span class="pkg-desc">Incredibly fast JavaScript runtime, bundler, transpiler and package manager</span>
+        </a>
+        <a class="pkg-item " href="https://electronjs.org">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">electron40</span>
+            <span class="pkg-version">40.10.0_1</span>
+          </div>
+          <span class="pkg-desc">Cross platform application framework based on web technologies</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/Equicord/Equibop">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">equibop</span>
+            <span class="pkg-version">3.2.0_1</span>
+          </div>
+          <span class="pkg-desc">A custom Discord desktop app with Equicord pre-installed</span>
+        </a>
+        <a class="pkg-item " href="https://fluxer.app">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">fluxer-canary-bin</span>
+            <span class="pkg-version">0.0.122_1</span>
+          </div>
+          <span class="pkg-desc">Fluxer Canary Desktop Application</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/evilmartians/lefthook">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">lefthook</span>
+            <span class="pkg-version">2.0.1_1</span>
+          </div>
+          <span class="pkg-desc">Git hooks manager</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/noctalia-dev/noctalia-shell">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">noctalia</span>
+            <span class="pkg-version">0_1</span>
+          </div>
+          <span class="pkg-desc">Noctalia desktop shell</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/pixelb/ps_mem">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">ps_mem</span>
+            <span class="pkg-version">3.14_2</span>
+          </div>
+          <span class="pkg-desc">List processes by memory usage</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/Kistler-Group/sdbus-cpp">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">sdbus-c++</span>
+            <span class="pkg-version">2.2.1_2</span>
+          </div>
+          <span class="pkg-desc">High-level C++ D-Bus library</span>
+        </a>
+        <a class="pkg-item " href="https://github.com/Vencord/Vesktop">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">vesktop</span>
+            <span class="pkg-version">1.6.1_1</span>
+          </div>
+          <span class="pkg-desc">Vesktop</span>
+        </a>
+        </div></div>
+      </div>
     </div>
 
     <div class="line cursor-line">
@@ -461,6 +473,3 @@ function filterPackages(query) {
 
 </body>
 </html>
-HTML
-
-echo "OK  generated  $OUT"
