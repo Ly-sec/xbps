@@ -166,10 +166,19 @@ jobs:
           done
 
           XBPS_MAKEJOBS=$(nproc)
+          FAILED_PKGS=()
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
-            ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg"
+            LOG="/tmp/build-${pkg}.log"
+            if ! ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1 | tee "$LOG"; then
+              echo "::error::Build failed for $pkg"
+              FAILED_PKGS+=("$pkg")
+            fi
           done < changed-packages.txt
+          if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
+            echo "The following packages failed to build: ${FAILED_PKGS[*]}"
+            exit 1
+          fi
 
           mkdir -p repo
           BINPKGS_DIR="void-packages/hostdir/binpkgs"
