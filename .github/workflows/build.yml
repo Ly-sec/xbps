@@ -117,13 +117,10 @@ jobs:
             REBUILD_ALL=true
           fi
 
-          if [ "$REBUILD_ALL" = "false" ]; then
-            INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
-            if [ -n "$INFRA" ]; then
-              echo "Infrastructure files changed, rebuilding all packages"
-              echo "Changed: $INFRA"
-              REBUILD_ALL=true
-            fi
+          INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
+          if [ -n "$INFRA" ] && [ "$REBUILD_ALL" = "false" ]; then
+            echo "Infrastructure files changed, but using version check to decide rebuilds"
+            echo "Changed: $INFRA"
           fi
 
           if [ "$REBUILD_ALL" = "true" ]; then
