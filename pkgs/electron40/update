@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=electron40
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -sL "https://api.github.com/repos/electron/electron/releases?per_page=30" \
+  | python3 -c "
+import sys, json, re
+data = json.load(sys.stdin)
+for r in data:
+    tag = r['tag_name']
+    m = re.match(r'^v(40\.\d+\.\d+)$', tag)
+    if m:
+        print(m.group(1))
+        break
+")
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+dl="https://github.com/electron/electron/releases/download/v${latest}/electron-v${latest}-linux-x64.zip"
+checksum=$(curl -sL --max-time 180 "$dl" | sha256sum | cut -d' ' -f1)
+
+echo "UPDATE:$pkgname|$current|$latest|$checksum"

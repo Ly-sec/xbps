@@ -1,0 +1,26 @@
+pkgname=electron40
+version=40.10.0
+revision=1
+archs="x86_64"
+short_desc="Cross platform application framework based on web technologies"
+maintainer="Ly-sec <void@lysec.dev>"
+license="BSD-3-Clause, MIT, Apache-2.0"
+homepage="https://electronjs.org"
+distfiles="https://github.com/electron/electron/releases/download/v${version}/electron-v${version}-linux-x64.zip"
+checksum=25d2b065892bbbc36bf5bbd8ca01e4e35372e6dca06563aca45b5ec490bf34ba
+nostrip=yes
+noverify=yes
+
+do_extract() {
+	mkdir -p "${wrksrc}"
+	cd "${wrksrc}"
+	unzip -q "${XBPS_SRCDISTDIR}/${pkgname}-${version}/electron-v${version}-linux-x64.zip"
+}
+
+do_install() {
+	vmkdir "usr/lib/${pkgname}"
+	cp -a "${wrksrc}"/* "${DESTDIR}/usr/lib/${pkgname}/"
+	chmod 755 "${DESTDIR}/usr/lib/${pkgname}/electron"
+	vmkdir "usr/bin"
+	ln -sf "../lib/${pkgname}/electron" "${DESTDIR}/usr/bin/${pkgname}"
+}
