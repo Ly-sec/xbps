@@ -224,69 +224,36 @@ cat > "$OUT" << 'HTML'
   }
   .pkg-scroll {
     max-height: 260px;
+    min-height: 52px;
     overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px;
-  }
-  .pkg-scroll .pkg-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 8px;
+    margin: 6px 0 0;
   }
 
   .pkg-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 10px;
-    margin: 10px 0 0;
+    display: block;
   }
 
   .pkg-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    display: block;
+    padding: 3px 0;
     text-decoration: none;
     color: var(--text);
-    transition: background 0.15s, border-color 0.15s;
+    line-height: 1.55;
+    border-radius: 2px;
+    transition: background 0.1s;
   }
   .pkg-item:hover {
-    background: var(--bg-alt);
-    border-color: var(--text-muted);
-  }
-
-  .pkg-item.built {
-    border-left: 3px solid var(--green);
+    background: var(--surface);
   }
 
   .pkg-icon {
-    flex-shrink: 0;
-    width: 14px;
-    text-align: center;
     color: var(--cyan);
-    font-size: 0.85rem;
+    margin-right: 2px;
     user-select: none;
   }
 
-  .pkg-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-  }
   .pkg-name {
     font-weight: 500;
-    word-break: break-word;
-  }
-  .pkg-name.signed::after {
-    content: " [signed]";
-    color: var(--green);
-    font-size: 0.65rem;
-    font-weight: 400;
   }
   .pkg-name.nonfree::after {
     content: " [nonfree]";
@@ -294,30 +261,24 @@ cat > "$OUT" << 'HTML'
     font-size: 0.65rem;
     font-weight: 400;
   }
-  .pkg-name.signed.nonfree::after {
-    content: " [signed] [nonfree]";
-  }
 
   .pkg-version {
     color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-left: auto;
-    flex-shrink: 0;
+    margin-left: 4px;
   }
+
   .pkg-desc {
+    display: block;
     color: var(--text-muted);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
+    padding-left: 18px;
     line-height: 1.4;
-    padding-left: 24px;
-    word-break: break-word;
   }
 
   .pkg-legend {
     color: var(--text-muted);
     font-size: 0.7rem;
-    margin-top: 8px;
-    padding: 6px 8px;
-    text-align: center;
+    margin-top: 6px;
     user-select: none;
   }
 
@@ -437,16 +398,13 @@ write_card() {
   revision=$(extract "$template" revision)
   homepage=$(extract "$template" homepage)
   pkgver="${version}_${revision}"
-  local extra_classes="$css_class"
-  [ "$signed" = "1" ] && extra_classes+=" signed"
-  [ "$nonfree" = "1" ] && extra_classes+=" nonfree"
+  local name_class=""
+  [ "$nonfree" = "1" ] && name_class="nonfree"
   cat >> "$OUT" << ITEM
-        <a class="pkg-item ${extra_classes}" href="${homepage:-#}">
-          <div class="pkg-header">
-            <span class="pkg-icon">#</span>
-            <span class="pkg-name">${pkgname}</span>
-            <span class="pkg-version">${pkgver}</span>
-          </div>
+        <a class="pkg-item" href="${homepage:-#}">
+          <span class="pkg-icon">#</span>
+          <span class="pkg-name${name_class:+ }${name_class}">${pkgname}</span>
+          <span class="pkg-version">${pkgver}</span>
           <span class="pkg-desc">${desc}</span>
         </a>
 ITEM
@@ -463,7 +421,7 @@ if [ ${#BUILT_PKGS[@]} -gt 0 ]; then
     write_card "$template" "built" "$pkgname" "$signed" "$nonfree"
   done
   echo '        </div></div>' >> "$OUT"
-  echo '        <div class="pkg-legend">[signed] packages are cryptographically signed &middot; [nonfree] packages may have licensing restrictions</div>' >> "$OUT"
+  echo '        <div class="pkg-legend">[nonfree] packages may have licensing restrictions</div>' >> "$OUT"
   echo '      </div>' >> "$OUT"
 fi
 
