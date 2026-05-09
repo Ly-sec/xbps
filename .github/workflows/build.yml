@@ -111,6 +111,11 @@ jobs:
             REBUILD_ALL=true
           fi
 
+          if [ "$REBUILD_ALL" = "false" ] && ! git merge-base --is-ancestor "$BEFORE" HEAD 2>/dev/null; then
+            echo "Force push detected (BEFORE not in current history), rebuilding all packages"
+            REBUILD_ALL=true
+          fi
+
           if [ "$REBUILD_ALL" = "false" ]; then
             INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
             if [ -n "$INFRA" ]; then
