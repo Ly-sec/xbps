@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=python-pywalfox
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -sL "https://pypi.org/pypi/pywalfox/json" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['info']['version'])")
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+url="https://files.pythonhosted.org/packages/source/p/pywalfox/pywalfox-${latest}.tar.gz"
+checksum=$(curl -sL --max-time 120 "$url" | sha256sum | cut -d' ' -f1)
+
+echo "UPDATE:$pkgname|$current|$latest|$checksum"
