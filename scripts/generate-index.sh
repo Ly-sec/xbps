@@ -10,36 +10,43 @@ OUT="$PUBLIC_DIR/index.html"
 
 extract() {
   local file="$1" key="$2"
-  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"$//"
+  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | sed -E "s/^${key}=//; s/^\"//; s/\"$//" || true
 }
 
 # Build set of pkgnames that have an xbps in PUBLIC_DIR
 declare -A BUILT
 declare -A SIGNED
-while IFS= read -r f; do
-  name=$(basename "$f")
-  stripped="${name%.x86_64.xbps}"
-  stripped="${stripped%.aarch64.xbps}"
-  stripped="${stripped%.noarch.xbps}"
-  pkgname="${stripped%-*}"
-  BUILT["$pkgname"]=1
-  if [ -f "${f}.sig" ]; then
-    SIGNED["$pkgname"]=1
-  fi
-done < <(find "$PUBLIC_DIR" -maxdepth 1 -type f -name '*.xbps' 2>/dev/null)
+declare -A NONFREE
+scan_xbps_dir() {
+  local dir="$1" nonfree="${2:-0}"
+  [ -d "$dir" ] || return 0
+  while IFS= read -r f; do
+    name=$(basename "$f")
+    stripped="${name%.x86_64.xbps}"
+    stripped="${stripped%.aarch64.xbps}"
+    stripped="${stripped%.noarch.xbps}"
+    pkgname="${stripped%-*}"
+    BUILT["$pkgname"]=1
+    [ "$nonfree" = "1" ] && NONFREE["$pkgname"]=1
+    if [ -f "${f}.sig" ]; then
+      SIGNED["$pkgname"]=1
+    fi
+  done < <(find "$dir" -maxdepth 1 -type f -name '*.xbps' 2>/dev/null)
+}
+scan_xbps_dir "$PUBLIC_DIR"
+scan_xbps_dir "$PUBLIC_DIR/nonfree" 1
 
-# Read all package templates and separate built vs not built
+# Read all package templates, keep only built ones
 BUILT_PKGS=()
-AVAIL_PKGS=()
 while IFS= read -r template; do
   pkgdir=$(dirname "$template")
   pkgname=$(basename "$pkgdir")
   desc=$(extract "$template" short_desc)
+  repo=$(extract "$template" repository)
   [ -n "$desc" ] || continue
   if [ "${BUILT["$pkgname"]+set}" = "set" ]; then
+    [ "$repo" = "nonfree" ] && NONFREE["$pkgname"]=1
     BUILT_PKGS+=("$template")
-  else
-    AVAIL_PKGS+=("$template")
   fi
 done < <(find pkgs/ -mindepth 2 -maxdepth 2 -name template -type f | sort)
 
@@ -205,52 +212,75 @@ cat > "$OUT" << 'HTML'
   }
 
   .pkg-section {
-    margin: 8px 0 0;
+    margin: 10px 0 0;
   }
   .section-label {
     color: var(--text-muted);
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    padding: 4px 0 2px;
+    padding: 6px 0 4px;
     user-select: none;
   }
   .pkg-scroll {
-    max-height: 300px;
+    max-height: 260px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 4px 8px;
+    padding: 8px;
+  }
+  .pkg-scroll .pkg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
   }
 
   .pkg-grid {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 1px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin: 10px 0 0;
   }
 
   .pkg-item {
-    display: block;
-    padding: 2px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     text-decoration: none;
     color: var(--text);
-    font-size: 0.78rem;
-    line-height: 1.6;
-    border-radius: 2px;
-    transition: background 0.1s;
+    transition: background 0.15s, border-color 0.15s;
   }
   .pkg-item:hover {
-    background: var(--surface);
+    background: var(--bg-alt);
+    border-color: var(--text-muted);
+  }
+
+  .pkg-item.built {
+    border-left: 3px solid var(--green);
   }
 
   .pkg-icon {
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
     color: var(--cyan);
-    margin-right: 2px;
+    font-size: 0.85rem;
     user-select: none;
   }
 
+  .pkg-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
   .pkg-name {
     font-weight: 500;
+    word-break: break-word;
   }
   .pkg-name.signed::after {
     content: " [signed]";
@@ -258,21 +288,37 @@ cat > "$OUT" << 'HTML'
     font-size: 0.65rem;
     font-weight: 400;
   }
+  .pkg-name.nonfree::after {
+    content: " [nonfree]";
+    color: var(--orange);
+    font-size: 0.65rem;
+    font-weight: 400;
+  }
+  .pkg-name.signed.nonfree::after {
+    content: " [signed] [nonfree]";
+  }
 
   .pkg-version {
     color: var(--text-muted);
-    margin-left: 4px;
+    font-size: 0.75rem;
+    margin-left: auto;
+    flex-shrink: 0;
   }
-  .pkg-version::before {
-    content: " ";
-  }
-
   .pkg-desc {
     color: var(--text-muted);
-    margin-left: 6px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding-left: 24px;
+    word-break: break-word;
   }
-  .pkg-desc::before {
-    content: "\00a0\002d\00a0";
+
+  .pkg-legend {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    margin-top: 8px;
+    padding: 6px 8px;
+    text-align: center;
+    user-select: none;
   }
 
   .search-bar {
@@ -324,7 +370,8 @@ cat > "$OUT" << 'HTML'
     body { padding: 12px; }
     .term-body { padding: 20px 16px 16px; }
     .term-footer { padding: 10px 16px 14px; }
-    .pkg-grid { grid-template-columns: 1fr; }
+    .pkg-grid,
+    .pkg-scroll .pkg-grid { grid-template-columns: 1fr; }
     pre { font-size: 0.8rem; padding: 12px; }
   }
 
@@ -383,20 +430,23 @@ cat > "$OUT" << 'HTML'
 HTML
 
 write_card() {
-  local template="$1" css_class="$2" pkgname="$3" signed="$4"
+  local template="$1" css_class="$2" pkgname="$3" signed="$4" nonfree="$5"
   local desc version revision homepage pkgver
   desc=$(extract "$template" short_desc)
   version=$(extract "$template" version)
   revision=$(extract "$template" revision)
   homepage=$(extract "$template" homepage)
   pkgver="${version}_${revision}"
-  local signed_class=""
-  [ "$signed" = "1" ] && signed_class="signed"
+  local extra_classes="$css_class"
+  [ "$signed" = "1" ] && extra_classes+=" signed"
+  [ "$nonfree" = "1" ] && extra_classes+=" nonfree"
   cat >> "$OUT" << ITEM
-        <a class="pkg-item ${css_class}" href="${homepage:-#}">
-          <span class="pkg-icon">#</span>
-          <span class="pkg-name ${signed_class}">${pkgname}</span>
-          <span class="pkg-version">${pkgver}</span>
+        <a class="pkg-item ${extra_classes}" href="${homepage:-#}">
+          <div class="pkg-header">
+            <span class="pkg-icon">#</span>
+            <span class="pkg-name">${pkgname}</span>
+            <span class="pkg-version">${pkgver}</span>
+          </div>
           <span class="pkg-desc">${desc}</span>
         </a>
 ITEM
@@ -404,26 +454,18 @@ ITEM
 
 if [ ${#BUILT_PKGS[@]} -gt 0 ]; then
   echo '      <div class="pkg-section">' >> "$OUT"
-  echo '        <span class="section-label">built</span>' >> "$OUT"
+  echo '        <span class="section-label">packages</span>' >> "$OUT"
   echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
   for template in "${BUILT_PKGS[@]}"; do
     pkgname=$(basename "$(dirname "$template")")
     signed="${SIGNED["$pkgname"]:-0}"
-    write_card "$template" "built" "$pkgname" "$signed"
+    nonfree="${NONFREE["$pkgname"]:-0}"
+    write_card "$template" "built" "$pkgname" "$signed" "$nonfree"
   done
   echo '        </div></div>' >> "$OUT"
+  echo '        <div class="pkg-legend">[signed] packages are cryptographically signed &middot; [nonfree] packages may have licensing restrictions</div>' >> "$OUT"
   echo '      </div>' >> "$OUT"
 fi
-
-echo '      <div class="pkg-section">' >> "$OUT"
-echo '        <span class="section-label">available</span>' >> "$OUT"
-echo '        <div class="pkg-scroll"><div class="pkg-grid">' >> "$OUT"
-for template in "${AVAIL_PKGS[@]}"; do
-  pkgname=$(basename "$(dirname "$template")")
-  write_card "$template" "" "$pkgname" "0"
-done
-echo '        </div></div>' >> "$OUT"
-echo '      </div>' >> "$OUT"
 
 cat >> "$OUT" << 'HTML'
     </div>
@@ -444,17 +486,10 @@ cat >> "$OUT" << 'HTML'
 <script>
 function filterPackages(query) {
   var q = query.toLowerCase();
-  document.querySelectorAll('.pkg-section').forEach(function(section) {
-    var cards = section.querySelectorAll('.pkg-item');
-    var visible = false;
-    cards.forEach(function(card) {
-      var name = card.querySelector('.pkg-name').textContent.toLowerCase();
-      var desc = card.querySelector('.pkg-desc').textContent.toLowerCase();
-      var match = name.indexOf(q) !== -1 || desc.indexOf(q) !== -1;
-      card.style.display = match ? '' : 'none';
-      if (match) visible = true;
-    });
-    section.style.display = visible || q === '' ? '' : 'none';
+  document.querySelectorAll('.pkg-item').forEach(function(card) {
+    var name = card.querySelector('.pkg-name').textContent.toLowerCase();
+    var desc = card.querySelector('.pkg-desc').textContent.toLowerCase();
+    card.style.display = name.indexOf(q) !== -1 || desc.indexOf(q) !== -1 ? '' : 'none';
   });
 }
 </script>

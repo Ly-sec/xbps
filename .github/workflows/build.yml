@@ -137,11 +137,22 @@ jobs:
             git diff --name-only HEAD -- pkgs/*/template \
               | sed 's|/template$||' \
               | while read -r p; do basename "$p"; done >> changed-packages.txt
-            # Also build packages that have no existing xbps
+            # Also build packages with no existing xbps of the same version
             for d in pkgs/*/; do
               [ -f "$d/template" ] || continue
               pkg=$(basename "$d")
-              if ! ls repo/${pkg}-*.xbps >/dev/null 2>&1; then
+              ver=$(grep -E '^version=' "$d/template" | head -1 | sed 's/^version=//')
+              rev=$(grep -E '^revision=' "$d/template" | head -1 | sed 's/^revision=//')
+              pkgver="${ver}_${rev}"
+              found=false
+              for search_dir in repo repo/nonfree; do
+                [ -d "$search_dir" ] || continue
+                if ls "${search_dir}/${pkg}-${pkgver}"*.xbps >/dev/null 2>&1; then
+                  found=true
+                  break
+                fi
+              done
+              if [ "$found" = false ]; then
                 echo "$pkg" >> changed-packages.txt
               fi
             done
@@ -187,9 +198,24 @@ jobs:
               [ -f "$f" ] || continue
               cp "$f" repo/
             done
+            if [ -d "$BINPKGS_DIR/nonfree" ]; then
+              mkdir -p repo/nonfree
+              for f in "$BINPKGS_DIR/nonfree"/*.xbps; do
+                [ -f "$f" ] || continue
+                cp "$f" repo/nonfree/
+              done
+            fi
           fi
+          PKGS_BUILT=false
           if ls repo/*.xbps 1>/dev/null 2>&1; then
             xbps-rindex -a repo/*.xbps 2>/dev/null
+            PKGS_BUILT=true
+          fi
+          if [ -d repo/nonfree ] && ls repo/nonfree/*.xbps 1>/dev/null 2>&1; then
+            xbps-rindex -a repo/nonfree/*.xbps 2>/dev/null
+            PKGS_BUILT=true
+          fi
+          if [ "$PKGS_BUILT" = "true" ]; then
             echo "packages_built=true" >> "$GITHUB_OUTPUT"
           else
             echo "packages_built=false" >> "$GITHUB_OUTPUT"
@@ -202,7 +228,9 @@ jobs:
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
           XBPS_SIGNEDBY: ${{ secrets.XBPS_SIGNEDBY }}
         run: |
-          if [ ! -d repo ] || [ -z "$(ls repo/*.xbps 2>/dev/null)" ]; then
+          HAS_MAIN=$(ls repo/*.xbps 2>/dev/null | head -1)
+          HAS_NONFREE=$(ls repo/nonfree/*.xbps 2>/dev/null | head -1)
+          if [ ! -d repo ] || { [ -z "$HAS_MAIN" ] && [ -z "$HAS_NONFREE" ]; }; then
             echo "No .xbps files found in repo/. Build packages first."
             exit 1
           fi
@@ -241,8 +269,13 @@ jobs:
           echo "Signing repository as \"$XBPS_SIGNEDBY\"..."
           "${SIGN_CMD[@]}"
 
+          if [ -d repo/nonfree ]; then
+            echo "Signing nonfree repository..."
+            xbps-rindex --sign --signedby "$XBPS_SIGNEDBY" ${KEY_ARG} repo/nonfree 2>/dev/null || true
+          fi
+
           if [ -n "$KEY_ARG" ]; then
-            for pkg in repo/*.xbps; do
+            for pkg in repo/*.xbps repo/nonfree/*.xbps; do
               [ -f "$pkg" ] || continue
               xbps-rindex --sign-pkg --signedby "$XBPS_SIGNEDBY" --privkey "${KEY_ARG#--privkey }" "$pkg" 2>/dev/null || true
             done
@@ -268,6 +301,10 @@ jobs:
             repo/*.sig*
             repo/*.fdb*
             repo/*.flist*
+            repo/nonfree/*.xbps
+            repo/nonfree/*.sig*
+            repo/nonfree/*.fdb*
+            repo/nonfree/*.flist*
             keys/pub.pem
           if-no-files-found: warn
 
