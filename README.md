@@ -1,5 +1,5 @@
 
-# void-repo — Custom Void Linux repository
+# xbps - Custom Void Linux repository
 
 This is a minimal overlay repository for Void Linux custom packages and selected upstream overrides.
 
