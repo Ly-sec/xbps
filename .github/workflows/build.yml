@@ -102,6 +102,22 @@ jobs:
               if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
             done
           done
+          # Create symlinks for subpackages defined via _package() functions
+          for pkgdir in pkgs/*/; do
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            while read -r line; do
+              case "$line" in
+                *_package\(\)*)
+                  sub=$(echo "$line" | sed 's/^[[:space:]]*//; s/_package().*//')
+                  [ -n "$sub" ] || continue
+                  [ "$sub" = "$pkg" ] && continue
+                  dst="void-packages/srcpkgs/$sub"
+                  [ -e "$dst" ] || ln -s "$pkg" "$dst"
+                  ;;
+              esac
+            done < "$pkgdir/template"
+          done
           for f in pkgs/*; do
             [ -f "$f" ] || [ -L "$f" ] || continue
             cp -P "$f" "void-packages/srcpkgs/$(basename "$f")"
