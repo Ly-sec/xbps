@@ -1,0 +1,59 @@
+# Template file for 'gpu-screen-recorder'
+pkgname=gpu-screen-recorder
+version=5.13.5
+revision=1
+archs="x86_64"
+build_style=meson
+configure_args="-Dsystemd=false -Dportal=true -Dcapabilities=false -Dnvidia_suspend_fix=false"
+buildtype=release
+short_desc="A shadowplay-like screen recorder for Linux. The fastest screen recorder for Linux"
+maintainer="Ly-sec <void@lysec.dev>"
+license="GPL-3.0-only"
+homepage="https://git.dec05eba.com/gpu-screen-recorder"
+
+hostmakedepends="meson pkg-config git vulkan-headers wayland-protocols"
+makedepends="
+ ffmpeg-devel
+ libglvnd-devel
+ libXcomposite-devel
+ libXrandr-devel
+ libXfixes-devel
+ libXdamage-devel
+ libX11-devel
+ pulseaudio-devel
+ libva-devel
+ libdrm-devel
+ libcap-devel
+ wayland-devel
+ pipewire-devel
+ dbus-devel
+ libjpeg-turbo-devel
+"
+depends="
+ ffmpeg
+ libglvnd
+ libXcomposite
+ libXrandr
+ libXfixes
+ libXdamage
+ libX11
+ pulseaudio
+ libva
+ libdrm
+ libcap
+ wayland
+ pipewire
+ dbus
+ libjpeg-turbo
+"
+
+noverify=yes
+nosource=yes
+
+do_fetch() {
+	git clone https://repo.dec05eba.com/gpu-screen-recorder --branch ${version} --depth 1 ${wrksrc}
+}
+
+post_install() {
+	setcap CAP_SYS_ADMIN=+ep ${DESTDIR}/usr/bin/gsr-kms-server
+}

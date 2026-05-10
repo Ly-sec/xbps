@@ -135,25 +135,32 @@ jobs:
             git diff --name-only HEAD -- pkgs/*/template \
               | sed 's|/template$||' \
               | while read -r p; do basename "$p"; done >> changed-packages.txt
-            # Also build packages with no existing xbps of the same version
-            for d in pkgs/*/; do
-              [ -f "$d/template" ] || continue
-              pkg=$(basename "$d")
-              ver=$(grep -E '^version=' "$d/template" | head -1 | sed 's/^version=//')
-              rev=$(grep -E '^revision=' "$d/template" | head -1 | sed 's/^revision=//')
-              pkgver="${ver}_${rev}"
-              found=false
-              for search_dir in repo repo/nonfree; do
-                [ -d "$search_dir" ] || continue
-                if ls "${search_dir}/${pkg}-${pkgver}"*.xbps >/dev/null 2>&1; then
-                  found=true
-                  break
+            # Only rebuild missing packages when repo/ already has built packages
+            # (avoids rebuilding everything on a fresh checkout where repo/ is empty)
+            HAS_EXISTING_REPO=false
+            if [ -d repo ] && ls repo/*.xbps >/dev/null 2>&1; then
+              HAS_EXISTING_REPO=true
+            fi
+            if [ "$HAS_EXISTING_REPO" = true ]; then
+              for d in pkgs/*/; do
+                [ -f "$d/template" ] || continue
+                pkg=$(basename "$d")
+                ver=$(grep -E '^version=' "$d/template" | head -1 | sed 's/^version=//')
+                rev=$(grep -E '^revision=' "$d/template" | head -1 | sed 's/^revision=//')
+                pkgver="${ver}_${rev}"
+                found=false
+                for search_dir in repo repo/nonfree; do
+                  [ -d "$search_dir" ] || continue
+                  if ls "${search_dir}/${pkg}-${pkgver}"*.xbps >/dev/null 2>&1; then
+                    found=true
+                    break
+                  fi
+                done
+                if [ "$found" = false ]; then
+                  echo "$pkg" >> changed-packages.txt
                 fi
               done
-              if [ "$found" = false ]; then
-                echo "$pkg" >> changed-packages.txt
-              fi
-            done
+            fi
             sort -u changed-packages.txt -o changed-packages.txt
           fi
 

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=gpu-screen-recorder
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(git ls-remote --tags https://repo.dec05eba.com/gpu-screen-recorder \
+  | grep -oP 'refs/tags/\K[0-9]+\.[0-9]+\.[0-9]+' \
+  | sort -V \
+  | tail -1)
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+echo "UPDATE:$pkgname|$current|$latest|"
