@@ -161,12 +161,14 @@ ffmpeg7-devel_package() {
 	conflicts="ffmpeg-devel"
 	replaces="ffmpeg-devel>=0"
 	pkg_install() {
-		vmove usr/include
-		vmove usr/lib/pkgconfig
-		vmove "usr/lib/*.a"
-		vmove "usr/lib/*.so"
-		vmove usr/share/ffmpeg/examples
-		vmove usr/share/man/man3
+		       vmove usr/include
+		       vmove usr/lib/pkgconfig
+		       if ls "$DESTDIR/usr/lib/"*.a >/dev/null 2>&1; then
+			       vmove "usr/lib/*.a"
+		       fi
+		       vmove "usr/lib/*.so"
+		       vmove usr/share/ffmpeg/examples
+		       vmove usr/share/man/man3
 	}
 }
 
