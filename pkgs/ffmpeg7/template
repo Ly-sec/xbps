@@ -157,15 +157,6 @@ libswresample7_package() {
 }
 
 ffmpeg7-devel_package() {
-	depends="
-		libavcodec7>=${version}_${revision}
-		libavdevice7>=${version}_${revision}
-		libavformat7>=${version}_${revision}
-		libavutil7>=${version}_${revision}
-		libavfilter7>=${version}_${revision}
-		libpostproc7>=${version}_${revision}
-		libswscale7>=${version}_${revision}
-		libswresample7>=${version}_${revision}"
 	short_desc+=" - development files"
 	conflicts="ffmpeg-devel"
 	replaces="ffmpeg-devel>=0"
