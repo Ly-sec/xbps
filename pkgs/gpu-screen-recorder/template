@@ -15,7 +15,7 @@ hostmakedepends="meson pkg-config git wayland-protocols"
 makedepends="
  Vulkan-Headers
  vulkan-loader-devel
- ffmpeg-devel
+ ffmpeg7-devel
  libglvnd-devel
  libXcomposite-devel
  libXrandr-devel
@@ -32,7 +32,7 @@ makedepends="
  libjpeg-turbo-devel
 "
 depends="
- ffmpeg
+ ffmpeg7
  libglvnd
  libXcomposite
  libXrandr

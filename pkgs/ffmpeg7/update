@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=ffmpeg7
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -s "https://api.github.com/repos/FFmpeg/FFmpeg/tags?per_page=100" \
+  | grep -oP '"name":\s*"n\K7\.1\.\d+' \
+  | sort -V \
+  | tail -1)
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+echo "UPDATE:$pkgname|$current|$latest|"
