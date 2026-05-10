@@ -69,7 +69,7 @@ do_configure() {
 		--enable-libcdio --enable-version3 --enable-runtime-cpudetect \
 		--enable-libmp3lame --enable-libvorbis --enable-libxvid \
 		--enable-libx264 --enable-libvpx --enable-libtheora \
-		--enable-shared --enable-static --enable-libxcb \
+		--enable-shared --disable-static --enable-libxcb \
 		--enable-libpulse --enable-libfreetype --enable-libopenmpt \
 		--enable-libspeex --enable-libcelt --enable-libass \
 		--enable-libopus --enable-librtmp --enable-libjack \
