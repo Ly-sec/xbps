@@ -3,12 +3,22 @@
 # into the template so xbps-src gets the correct version at parse time.
 set -e
 
-SHA=$(curl -s "https://api.github.com/repos/noctalia-dev/noctalia-shell/git/refs/heads/v5" | awk -F'"' '/"sha"/{print $4;exit}' | cut -c1-7)
+SHA=$(curl -s "https://api.github.com/repos/noctalia-dev/noctalia-shell/git/refs/heads/v5" \
+  | awk -F'"' '/"sha"/{print $4;exit}' | cut -c1-7)
 
 if [ -z "$SHA" ]; then
 	echo "Failed to resolve commit SHA"
 	exit 1
 fi
 
-sed -i "s/^version=.*/version=${SHA}/" "$(dirname "$0")/template"
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Skip if this exact version already exists in the cached repository
+if [ -d "$PKGDIR/../../repo" ] && \
+   ls "$PKGDIR/../../repo/noctalia-${SHA}"*.xbps >/dev/null 2>&1; then
+	echo "noctalia $SHA already built, skipping"
+	exit 0
+fi
+
+sed -i "s/^version=.*/version=${SHA}/" "$PKGDIR/template"
 echo "${SHA}"
