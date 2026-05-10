@@ -126,6 +126,17 @@ jobs:
             REBUILD_ALL=true
           fi
 
+          # If no cached packages exist, rebuild all to seed the cache so that
+          # previously built packages don't vanish from the deployment
+          CACHE_RESTORED=false
+          if [ -d repo ] && ls repo/*.xbps >/dev/null 2>&1; then
+            CACHE_RESTORED=true
+          fi
+          if [ "$REBUILD_ALL" = "false" ] && [ "$CACHE_RESTORED" = "false" ]; then
+            echo "Cache miss, rebuilding all packages to seed cache"
+            REBUILD_ALL=true
+          fi
+
           INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
           if [ -n "$INFRA" ] && [ "$REBUILD_ALL" = "false" ]; then
             echo "Infrastructure files changed, but using version check to decide rebuilds"
