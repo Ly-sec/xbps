@@ -11,8 +11,9 @@ maintainer="Ly-sec <void@lysec.dev>"
 license="GPL-3.0-only"
 homepage="https://git.dec05eba.com/gpu-screen-recorder"
 
-hostmakedepends="meson pkg-config git vulkan-headers wayland-protocols"
+hostmakedepends="meson pkg-config git wayland-protocols"
 makedepends="
+ Vulkan-Headers
  ffmpeg-devel
  libglvnd-devel
  libXcomposite-devel
