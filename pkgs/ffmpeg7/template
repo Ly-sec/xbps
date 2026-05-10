@@ -15,7 +15,7 @@ makedepends="zlib-devel bzip2-devel freetype-devel alsa-lib-devel libXfixes-deve
  $(vopt_if vdpau libvdpau-devel) $(vopt_if fdk_aac fdk-aac-devel)
  $(vopt_if libvpl libvpl-devel) $(vopt_if nvcodec nv-codec-headers)
  $(vopt_if vaapi libva-devel)"
-depends="ffplay7>=${version}_${revision}"
+# ffplay7 is a subpackage defined below and doesn't need to be listed here
 short_desc="Decoding, encoding and streaming software (7.x)"
 maintainer="Ly-sec <void@lysec.dev>"
 license="GPL-3.0-or-later"
