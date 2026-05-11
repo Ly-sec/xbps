@@ -116,6 +116,67 @@ jobs:
             sleep 5
           done
 
+      - name: Resolve custom package dependencies
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          # Extract package names from the path format (pkgs/<pkgname>)
+          PKG_NAMES=$(mktemp)
+          sed 's|^pkgs/||' changed-packages.txt | sort -u > "$PKG_NAMES"
+
+          # Build subpackage-to-base mapping
+          declare -A BASE_PKG
+          for d in pkgs/*/; do
+            [ -f "$d/template" ] || continue
+            base=$(basename "$d")
+            BASE_PKG["$base"]="$base"
+            while IFS= read -r line; do
+              case "$line" in
+                *_package\(\)*)
+                  sub=$(echo "$line" | sed 's/^[[:space:]]*//; s/_package().*//')
+                  [ -n "$sub" ] && [ "$sub" != "$base" ] && BASE_PKG["$sub"]="$base"
+                  ;;
+              esac
+            done < "$d/template"
+          done
+
+          # Resolve until stable
+          while true; do
+            ADDED=false
+            while IFS= read -r pkg; do
+              [ -z "$pkg" ] && continue
+              template="pkgs/$pkg/template"
+              [ -f "$template" ] || continue
+              awk '
+                /^makedepends=/ {
+                  sub(/^makedepends=/, "")
+                  if (/^"/ && /"$/) { gsub(/"/, ""); print; next }
+                  if (/^"/) { sub(/^"/, ""); buf = $0; in_block = 1; next }
+                }
+                in_block {
+                  if (/"$/) { sub(/"$/, ""); print buf " " $0; in_block = 0 }
+                  else { buf = buf " " $0 }
+                }
+              ' "$template" 2>/dev/null | while IFS= read -r deps; do
+                for dep in $deps; do
+                  dep=$(echo "$dep" | xargs)
+                  [ -z "$dep" ] && continue
+                  base="${BASE_PKG[$dep]:-}"
+                  [ -z "$base" ] && continue
+                  grep -qxF "$base" "$PKG_NAMES" 2>/dev/null && continue
+                  echo "$base" >> "$PKG_NAMES"
+                  ADDED=true
+                done
+              done
+            done < "$PKG_NAMES"
+            sort -u "$PKG_NAMES" -o "$PKG_NAMES"
+            [ "$ADDED" = "false" ] && break
+          done
+
+          # Write back in path format expected by the build step
+          sed 's/^/pkgs\//' "$PKG_NAMES" > changed-packages.txt
+          echo "Packages to build (dependencies resolved):"
+          cat changed-packages.txt
+
       - name: Build changed packages
         if: steps.detect.outputs.changed == 'true'
         run: |

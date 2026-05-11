@@ -200,7 +200,55 @@ jobs:
             sort -u changed-packages.txt -o changed-packages.txt
           fi
 
-          echo "Packages to build:"
+          # Resolve custom package dependencies (from pkgs/)
+          unset BASE_PKG
+          declare -A BASE_PKG
+          for d in pkgs/*/; do
+            [ -f "$d/template" ] || continue
+            base=$(basename "$d")
+            BASE_PKG["$base"]="$base"
+            while IFS= read -r line; do
+              case "$line" in
+                *_package\(\)*)
+                  sub=$(echo "$line" | sed 's/^[[:space:]]*//; s/_package().*//')
+                  [ -n "$sub" ] && [ "$sub" != "$base" ] && BASE_PKG["$sub"]="$base"
+                  ;;
+              esac
+            done < "$d/template"
+          done
+          while true; do
+            ADDED=false
+            while IFS= read -r pkg; do
+              [ -z "$pkg" ] && continue
+              template="pkgs/$pkg/template"
+              [ -f "$template" ] || continue
+              awk '
+                /^makedepends=/ {
+                  sub(/^makedepends=/, "")
+                  if (/^"/ && /"$/) { gsub(/"/, ""); print; next }
+                  if (/^"/) { sub(/^"/, ""); buf = $0; in_block = 1; next }
+                }
+                in_block {
+                  if (/"$/) { sub(/"$/, ""); print buf " " $0; in_block = 0 }
+                  else { buf = buf " " $0 }
+                }
+              ' "$template" 2>/dev/null | while IFS= read -r deps; do
+                for dep in $deps; do
+                  dep=$(echo "$dep" | xargs)
+                  [ -z "$dep" ] && continue
+                  base="${BASE_PKG[$dep]:-}"
+                  [ -z "$base" ] && continue
+                  grep -qxF "$base" changed-packages.txt 2>/dev/null && continue
+                  echo "$base" >> changed-packages.txt
+                  ADDED=true
+                done
+              done
+            done < changed-packages.txt
+            sort -u changed-packages.txt -o changed-packages.txt
+            [ "$ADDED" = "false" ] && break
+          done
+
+          echo "Packages to build (dependencies resolved):"
           cat changed-packages.txt
 
           export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
