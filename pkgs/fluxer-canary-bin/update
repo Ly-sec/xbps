@@ -5,19 +5,15 @@ PKGDIR="$(cd "$(dirname "$0")" && pwd)"
 pkgname=fluxer-canary-bin
 current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
 
-latest=$(curl -sL "https://api.fluxer.app/dl/desktop/canary/linux/x64/" \
-  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1)
+manifest_x86=$(curl -sL "https://api.fluxer.app/dl/desktop/canary/linux/x64/manifest.json")
+manifest_aarch64=$(curl -sL "https://api.fluxer.app/dl/desktop/canary/linux/arm64/manifest.json")
+
+latest=$(echo "$manifest_x86" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+checksum_x86_64=$(echo "$manifest_x86" | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['tar_gz']['sha256'])")
+checksum_aarch64=$(echo "$manifest_aarch64" | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['tar_gz']['sha256'])")
 
 if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
   exit 0
 fi
-
-checksum_x86_64=$(curl -sL --max-time 300 \
-  "https://api.fluxer.app/dl/desktop/canary/linux/x64/${latest}/tar_gz" \
-  | sha256sum | cut -d' ' -f1)
-
-checksum_aarch64=$(curl -sL --max-time 300 \
-  "https://api.fluxer.app/dl/desktop/canary/linux/arm64/${latest}/tar_gz" \
-  | sha256sum | cut -d' ' -f1)
 
 echo "UPDATE:$pkgname|$current|$latest|$checksum_x86_64|$checksum_aarch64"
