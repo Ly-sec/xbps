@@ -1,0 +1,5 @@
+case "$ACTION" in
+post)
+    setcap CAP_SYS_ADMIN=+ep /usr/bin/gsr-kms-server 2>/dev/null || true
+    ;;
+esac

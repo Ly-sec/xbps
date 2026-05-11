@@ -11,7 +11,7 @@ maintainer="Ly-sec <void@lysec.dev>"
 license="GPL-3.0-only"
 homepage="https://git.dec05eba.com/gpu-screen-recorder"
 
-hostmakedepends="meson pkg-config git wayland-protocols libcap-progs"
+hostmakedepends="meson pkg-config git wayland-protocols"
 makedepends="
  Vulkan-Headers
  vulkan-loader-devel
@@ -43,6 +43,7 @@ depends="
  libva
  libdrm
  libcap
+ libcap-progs
  wayland
  pipewire
  dbus
@@ -56,6 +57,4 @@ do_fetch() {
 	git clone https://repo.dec05eba.com/gpu-screen-recorder --branch ${version} --depth 1 ${wrksrc}
 }
 
-post_install() {
-	setcap CAP_SYS_ADMIN=+ep ${DESTDIR}/usr/bin/gsr-kms-server
-}
+
