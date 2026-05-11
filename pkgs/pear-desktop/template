@@ -6,6 +6,7 @@ _nodeversion=22
 _electronversion=38
 archs="x86_64"
 hostmakedepends="pnpm nodejs"
+makedepends="electron${_electronversion}"
 depends="electron${_electronversion} libsecret"
 conflicts="youtube-music"
 short_desc="Extension for music player"
