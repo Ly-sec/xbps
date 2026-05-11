@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+pkgname=electron38
+current=$(grep -E '^version=' "$PKGDIR/template" | sed 's/version=//' | tr -d '"')
+
+latest=$(curl -sL "https://api.github.com/repos/electron/electron/releases?per_page=50" \
+  | grep '"tag_name":' | sed 's/.*"v//;s/".*//' \
+  | grep '^38\.' | sort -V | tail -1)
+
+if [ -z "$latest" ] || [ "$latest" = "$current" ]; then
+  exit 0
+fi
+
+url="https://github.com/electron/electron/releases/download/v${latest}/electron-v${latest}-linux-x64.zip"
+checksum=$(curl -sL --max-time 300 "$url" | sha256sum | cut -d' ' -f1)
+
+echo "UPDATE:$pkgname|$current|$latest|$checksum"
