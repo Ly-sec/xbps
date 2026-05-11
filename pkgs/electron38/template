@@ -1,6 +1,6 @@
 pkgname=electron38
 version=38.7.2
-revision=1
+revision=2
 archs="x86_64"
 short_desc="Cross platform application framework based on web technologies"
 maintainer="Ly-sec <void@lysec.dev>"
