@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Pear Desktop
+Comment=Extension for music player
+Exec=pear-desktop %U
+Icon=pear-desktop
+Terminal=false
+Type=Application
+Categories=Music;Audio;
+StartupWMClass=Pear Desktop

@@ -1,0 +1,49 @@
+# Template file for 'pear-desktop'
+pkgname=pear-desktop
+version=3.11.0
+revision=1
+_nodeversion=22
+_electronversion=38
+archs="x86_64"
+hostmakedepends="pnpm nodejs"
+depends="electron${_electronversion} libsecret"
+conflicts="youtube-music"
+short_desc="Extension for music player"
+maintainer="Ly-sec <void@lysec.dev>"
+license="MIT"
+homepage="https://github.com/pear-devs/pear-desktop"
+distfiles="https://github.com/pear-devs/pear-desktop/archive/refs/tags/v${version}.tar.gz"
+checksum=fb2e06ae019214ad62e0aaee7545d11f6ff42c79084ec4fe0dad7d9f534cbeec
+nostrip=yes
+
+do_build() {
+	cd "${wrksrc}"
+	export PNPM_HOME="${wrksrc}/pnpm-home"
+	export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+	electronDist="/usr/lib/electron${_electronversion}"
+	electronVer="$(sed s/^v// "/usr/lib/electron${_electronversion}/version")"
+	pnpm install --frozen-lockfile
+	pnpm clean
+	pnpm build
+	pnpm electron-builder --linux dir \
+		-c.electronDist="${electronDist}" -c.electronVersion="${electronVer}"
+}
+
+do_install() {
+	install -dm755 "${DESTDIR}/usr/lib/${pkgname}"
+	cp "${wrksrc}/pack/linux-unpacked/resources/app.asar" "${DESTDIR}/usr/lib/${pkgname}/"
+	cp -r "${wrksrc}/pack/linux-unpacked/resources/app.asar.unpacked" "${DESTDIR}/usr/lib/${pkgname}/"
+
+	install -dm755 "${DESTDIR}/usr/bin"
+	sed "s|@ELECTRONVERSION@|${_electronversion}|" "${FILESDIR}/${pkgname}.sh" \
+		> "${DESTDIR}/usr/bin/${pkgname}"
+	chmod 755 "${DESTDIR}/usr/bin/${pkgname}"
+
+	install -Dm644 "${FILESDIR}/${pkgname}.desktop" "${DESTDIR}/usr/share/applications/${pkgname}.desktop"
+	install -Dm644 "${wrksrc}/license" "${DESTDIR}/usr/share/licenses/${pkgname}/license"
+
+	for i in 16 24 32 48 64 128 256 512 1024; do
+		install -Dm644 "${wrksrc}/assets/generated/icons/png/${i}x${i}.png" \
+			"${DESTDIR}/usr/share/icons/hicolor/${i}x${i}/apps/${pkgname}.png"
+	done
+}
