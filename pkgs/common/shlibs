@@ -1,1 +1,9 @@
 libsdbus-c++.so.2 sdbus-c++-2.2.1_1
+libavcodec.so.61 libavcodec7-7.0_1
+libavdevice.so.61 libavdevice7-7.0_1
+libavfilter.so.10 libavfilter7-7.0_1
+libavformat.so.61 libavformat7-7.0_1
+libavutil.so.59 libavutil7-7.0_1
+libpostproc.so.58 libpostproc7-7.0_1
+libswresample.so.5 libswresample7-7.0_1
+libswscale.so.8 libswscale7-7.0_1
