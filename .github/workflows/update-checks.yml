@@ -66,7 +66,7 @@ jobs:
             # Git-based packages (version=0) use their custom update script
             if grep -q '^version=0$' "$pkgdir/template" && [ -f "$pkgdir/update" ]; then
               echo "Checking $pkg via update script..."
-              (cd "$pkgdir" && bash ./update)
+              (cd "$pkgdir" && sh ./update)
               continue
             fi
 

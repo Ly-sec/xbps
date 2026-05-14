@@ -111,7 +111,7 @@ jobs:
           for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -f "$pkgdir/update" ] && grep -q '^version=0$' "$pkgdir/template" && {
               echo "Running update for $(basename "$pkgdir")..."
-              (cd "$pkgdir" && bash ./update)
+              (cd "$pkgdir" && sh ./update)
               cp "$pkgdir/template" "srcpkgs/$(basename "$pkgdir")/template"
             }
           done
