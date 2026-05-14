@@ -241,6 +241,7 @@ jobs:
 
       - name: Sign repository
         if: steps.build.outputs.packages_built == 'true'
+        shell: bash
         env:
           XBPS_PRIVKEY: ${{ secrets.XBPS_PRIVKEY }}
           XBPS_PUBKEY: ${{ secrets.XBPS_PUBKEY }}
