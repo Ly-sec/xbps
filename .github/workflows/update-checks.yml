@@ -18,7 +18,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -84,33 +83,24 @@ jobs:
             echo "UPDATE:$pkg|$OLD_VER|$NEW_VER" >> "$GITHUB_WORKSPACE/updates.txt"
           done
 
-      - name: Create pull requests for updates
+      - name: Commit updates directly
         if: always()
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
         run: |
           [ ! -f updates.txt ] && { echo "No updates found."; exit 0; }
 
           git config user.name "Ly-sec"
           git config user.email "void@lysec.dev"
-          BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
           while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
             echo "Processing $pkg: $current -> $latest"
 
-            branch="update/${pkg}-${latest}"
-            EXISTING_PR=$(gh pr list --repo "${{ github.repository }}" --head "$branch" --state open --json number --jq '.[0].number' || echo "")
-            [ -n "$EXISTING_PR" ] && { echo "PR #$EXISTING_PR already exists, skipping"; continue; }
-
-            git checkout -B "$branch"
             template="pkgs/$pkg/template"
             sed -i "s/^version=.*/version=$latest/" "$template"
             sed -i "s/^revision=.*/revision=1/" "$template"
 
-            # Regenerate checksum if the template has distfiles
+            # Regenerate checksums if the template has distfiles
             if grep -q '^distfiles=' "$template"; then
-              # Copy template to void-packages for xgensum
               mkdir -p "/void-packages/srcpkgs/$pkg"
               cp "$template" "/void-packages/srcpkgs/$pkg/template"
               chown builder:builder "/void-packages/srcpkgs/$pkg/template"
@@ -121,13 +111,12 @@ jobs:
             fi
 
             git add "$template"
-            git commit -m "$pkg: update to $latest"
-            git push origin "$branch" --force
-            gh pr create \
-              --repo "${{ github.repository }}" \
-              --title "$pkg: update $current -> $latest" \
-              --body "Update $pkg from $current to $latest." \
-              --base "$BASE_BRANCH" \
-              --head "$branch" || true
-            git checkout "$BASE_BRANCH"
           done < updates.txt
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(pkgs): auto-update packages"
+          git push
