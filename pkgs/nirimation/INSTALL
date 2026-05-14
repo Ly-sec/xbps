@@ -1,0 +1,19 @@
+case "$ACTION" in
+post)
+	echo ""
+	echo "==> nirimation installed."
+	echo "    KDL files are in /usr/share/nirimation/"
+	echo "    Your user config lives at ~/.config/nirimation/config.toml"
+	echo ""
+	echo "    First run:"
+	echo "      nirimation apply <name>"
+	echo ""
+	echo "    This will:"
+	echo "      - Copy the animation to ~/.config/niri/nirimation.kdl"
+	echo "      - Add a one-time include line to your niri config.kdl"
+	echo "      - Reload niri"
+	echo ""
+	echo "    Run 'nirimation list' to see available animations."
+	echo ""
+	;;
+esac

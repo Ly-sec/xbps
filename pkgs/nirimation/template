@@ -1,0 +1,32 @@
+# Template file for 'nirimation'
+# Run ./pkgs/nirimation/update to set version to the latest commit.
+pkgname=nirimation
+version=0
+revision=1
+short_desc="Animations for the Niri Wayland compositor"
+maintainer="XansiDev <chaoscatsofficial@gmail.com>"
+license="MIT"
+homepage="https://github.com/XansiVA/nirimation"
+
+nostrip=yes
+nosource=yes
+noverify=yes
+
+depends="python>=3.11 niri"
+
+do_fetch() {
+	git clone https://github.com/XansiVA/nirimation.git ${wrksrc}
+}
+
+do_install() {
+	vmkdir usr/bin
+	vinstall "${wrksrc}/animations/nirimation" 755 usr/bin
+
+	vmkdir usr/share/nirimation
+	for kdl in "${wrksrc}"/animations/*.kdl; do
+		[ -f "$kdl" ] || continue
+		vinstall "$kdl" 644 usr/share/nirimation
+	done
+
+	vlicense LICENSE
+}

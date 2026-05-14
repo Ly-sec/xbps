@@ -1,0 +1,16 @@
+case "$ACTION" in
+post-remove)
+	echo ""
+	echo "==> nirimation removed."
+	echo "    The following were NOT automatically deleted:"
+	echo "      ~/.config/nirimation/"
+	echo "      ~/.config/niri/nirimation.kdl"
+	echo ""
+	echo "    Remove them manually if you want:"
+	echo "      rm -rf ~/.config/nirimation"
+	echo "      rm -f ~/.config/niri/nirimation.kdl"
+	echo ""
+	echo "    Also remove the include line from ~/.config/niri/config.kdl if present."
+	echo ""
+	;;
+esac
