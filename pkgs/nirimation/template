@@ -8,6 +8,8 @@ maintainer="XansiDev <chaoscatsofficial@gmail.com>"
 license="MIT"
 homepage="https://github.com/XansiVA/nirimation"
 
+hostmakedepends="git"
+
 nostrip=yes
 nosource=yes
 noverify=yes
