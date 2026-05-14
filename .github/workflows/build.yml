@@ -47,7 +47,7 @@ jobs:
       - name: Prepare container
         run: |
           xbps-install -Syu xbps
-          xbps-install -y git curl
+          xbps-install -y sudo git curl
           useradd -G xbuilder -M builder
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
