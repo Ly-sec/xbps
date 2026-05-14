@@ -26,12 +26,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  XBPS_TARGET_ARCH: x86_64
   XBPS_ALLOW_RESTRICTED: yes
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-glibc-full:latest
+      options: --privileged
     timeout-minutes: 120
     outputs:
       packages_built: ${{ steps.build.outputs.packages_built }}
@@ -42,25 +44,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install xbps tools
+      - name: Prepare container
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd
-          curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
-            | sudo tar xJ -C / --strip-components=1
+          xbps-install -Syu xbps
+          xbps-install -y git curl
+          useradd -G xbuilder -M builder
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Configure xbps-uchroot
+      - name: Setup void-packages
         run: |
-          UCHROOT_BIN="$(command -v xbps-uchroot)"
-          if [ -z "$UCHROOT_BIN" ]; then
-            echo "xbps-uchroot not found"
-            exit 1
-          fi
-          sudo chown root:root "$UCHROOT_BIN"
-          sudo chmod 4755 "$UCHROOT_BIN"
-
-      - name: Clone upstream void-packages
-        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
+          git clone --depth=1 https://github.com/void-linux/void-packages.git /void-packages
+          cd /void-packages
+          echo XBPS_BUILD_ENVIRONMENT=void-packages-ci >> etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+          echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+          chown -R builder:xbuilder .
 
       - name: Restore cached repository packages
         id: cache-repo
@@ -74,136 +72,101 @@ jobs:
       - name: Build packages
         id: build
         run: |
-          git -C void-packages fetch --depth=1 origin master
-          git -C void-packages reset --hard origin/master
+          cd /void-packages
 
-          # Run update scripts for packages with placeholder versions
-          for pkgdir in pkgs/*/; do
-            [ -f "$pkgdir/update" ] || continue
-            [ -f "$pkgdir/template" ] || continue
-            if grep -q '^version=0$' "$pkgdir/template"; then
-              echo "Running update for $(basename "$pkgdir")..."
-              (cd "$pkgdir" && ./update)
-            fi
-          done
-
-          for pkgdir in pkgs/*/; do
+          # Copy overlays
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -d "$pkgdir" ] || continue
             [ -f "$pkgdir/template" ] || continue
             pkg="$(basename "$pkgdir")"
-            dst="void-packages/srcpkgs/$pkg"
+            dst="srcpkgs/$pkg"
             rm -rf "$dst"
             mkdir -p "$dst"
             cp "$pkgdir/template" "$dst/template"
-            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
-            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
-            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
-            for extra in INSTALL REMOVE options; do
-              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
+            for extra in INSTALL REMOVE patches files update options; do
+              [ -e "$pkgdir/$extra" ] && cp -r "$pkgdir/$extra" "$dst/"
             done
           done
-          # Create symlinks for subpackages defined via _package() functions
-          for pkgdir in pkgs/*/; do
+
+          # Symlink subpackages
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -f "$pkgdir/template" ] || continue
-            pkg="$(basename "$pkgdir")"
-            while read -r line; do
+            base=$(basename "$pkgdir")
+            while IFS= read -r line; do
               case "$line" in
                 *_package\(\)*)
                   sub=$(echo "$line" | sed 's/^[[:space:]]*//; s/_package().*//')
-                  [ -n "$sub" ] || continue
-                  [ "$sub" = "$pkg" ] && continue
-                  dst="void-packages/srcpkgs/$sub"
-                  [ -e "$dst" ] || ln -s "$pkg" "$dst"
+                  [ -n "$sub" ] && [ "$sub" != "$base" ] && [ ! -e "srcpkgs/$sub" ] && ln -s "$base" "srcpkgs/$sub"
                   ;;
               esac
             done < "$pkgdir/template"
           done
-          for f in pkgs/*; do
-            [ -f "$f" ] || [ -L "$f" ] || continue
-            cp -P "$f" "void-packages/srcpkgs/$(basename "$f")"
+
+          # Custom shlibs
+          if [ -f "$GITHUB_WORKSPACE/pkgs/common/shlibs" ]; then
+            cat "$GITHUB_WORKSPACE/pkgs/common/shlibs" >> common/shlibs
+          fi
+
+          # Run update scripts for git-based packages (version=0)
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
+            [ -f "$pkgdir/update" ] && grep -q '^version=0$' "$pkgdir/template" && {
+              echo "Running update for $(basename "$pkgdir")..."
+              (cd "$pkgdir" && bash ./update)
+              cp "$pkgdir/template" "srcpkgs/$(basename "$pkgdir")/template"
+            }
           done
 
-          # Copy custom shlibs into void-packages so dependency resolution works
-          if [ -f pkgs/common/shlibs ]; then
-            cat pkgs/common/shlibs >> void-packages/common/shlibs
-          fi
+          # Bootstrap
+          sudo -Eu builder ./xbps-src binary-bootstrap
 
           # Detect changed packages
           BEFORE="${{ github.event.before }}"
           REBUILD_ALL=false
-
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "First push, rebuilding all packages"
             REBUILD_ALL=true
           fi
-
-          if [ "$REBUILD_ALL" = "false" ] && ! git merge-base --is-ancestor "$BEFORE" HEAD 2>/dev/null; then
-            echo "Force push detected (BEFORE not in current history), rebuilding all packages"
+          if [ "$REBUILD_ALL" = "false" ] && ! git -C "$GITHUB_WORKSPACE" merge-base --is-ancestor "$BEFORE" HEAD 2>/dev/null; then
             REBUILD_ALL=true
           fi
-
-          # If no cached packages exist, rebuild all to seed the cache so that
-          # previously built packages don't vanish from the deployment
           CACHE_RESTORED=false
-          if [ -d repo ] && ls repo/*.xbps >/dev/null 2>&1; then
+          if [ -d "$GITHUB_WORKSPACE/repo" ] && ls "$GITHUB_WORKSPACE/repo"/*.xbps >/dev/null 2>&1; then
             CACHE_RESTORED=true
           fi
           if [ "$REBUILD_ALL" = "false" ] && [ "$CACHE_RESTORED" = "false" ]; then
-            echo "Cache miss, rebuilding all packages to seed cache"
             REBUILD_ALL=true
           fi
 
-          INFRA=$(git diff --name-only "$BEFORE"...HEAD -- .github/workflows/build.yml .github/workflows/build-pr.yml pkgs/common/ 2>/dev/null || true)
-          if [ -n "$INFRA" ] && [ "$REBUILD_ALL" = "false" ]; then
-            echo "Infrastructure files changed, but using version check to decide rebuilds"
-            echo "Changed: $INFRA"
-          fi
-
+          WORKSPACE="$GITHUB_WORKSPACE"
           if [ "$REBUILD_ALL" = "true" ]; then
-            for d in pkgs/*/; do
+            for d in "$WORKSPACE/pkgs/"*/; do
               [ -f "$d/template" ] && basename "$d"
             done | sort > changed-packages.txt
           else
             > changed-packages.txt
-            git diff --name-only "$BEFORE"...HEAD -- pkgs/*/template \
-              | sed 's|/template$||' \
-              | while read -r p; do basename "$p"; done >> changed-packages.txt
-            git diff --name-only HEAD -- pkgs/*/template \
-              | sed 's|/template$||' \
-              | while read -r p; do basename "$p"; done >> changed-packages.txt
-            # Only rebuild missing packages when repo/ already has built packages
-            # (avoids rebuilding everything on a fresh checkout where repo/ is empty)
-            HAS_EXISTING_REPO=false
-            if [ -d repo ] && ls repo/*.xbps >/dev/null 2>&1; then
-              HAS_EXISTING_REPO=true
-            fi
-            if [ "$HAS_EXISTING_REPO" = true ]; then
-              for d in pkgs/*/; do
+            git -C "$WORKSPACE" diff --name-only "$BEFORE"...HEAD -- pkgs/*/template \
+              | sed 's|/template$||' | while read -r p; do basename "$p"; done >> changed-packages.txt
+            git -C "$WORKSPACE" diff --name-only HEAD -- pkgs/*/template \
+              | sed 's|/template$||' | while read -r p; do basename "$p"; done >> changed-packages.txt
+            if [ "$CACHE_RESTORED" = "true" ]; then
+              for d in "$WORKSPACE/pkgs/"*/; do
                 [ -f "$d/template" ] || continue
                 pkg=$(basename "$d")
                 ver=$(grep -E '^version=' "$d/template" | head -1 | sed 's/^version=//')
                 rev=$(grep -E '^revision=' "$d/template" | head -1 | sed 's/^revision=//')
                 pkgver="${ver}_${rev}"
                 found=false
-                for search_dir in repo repo/nonfree; do
-                  [ -d "$search_dir" ] || continue
-                  if ls "${search_dir}/${pkg}-${pkgver}"*.xbps >/dev/null 2>&1; then
-                    found=true
-                    break
-                  fi
+                for search_dir in "$WORKSPACE/repo" "$WORKSPACE/repo/nonfree"; do
+                  [ -d "$search_dir" ] && ls "${search_dir}/${pkg}-${pkgver}"*.xbps >/dev/null 2>&1 && found=true && break
                 done
-                if [ "$found" = false ]; then
-                  echo "$pkg" >> changed-packages.txt
-                fi
+                [ "$found" = false ] && echo "$pkg" >> changed-packages.txt
               done
             fi
             sort -u changed-packages.txt -o changed-packages.txt
           fi
 
-          # Resolve custom package dependencies (from pkgs/)
-          unset BASE_PKG
+          # Resolve custom package dependencies
           declare -A BASE_PKG
-          for d in pkgs/*/; do
+          for d in "$WORKSPACE/pkgs/"*/; do
             [ -f "$d/template" ] || continue
             base=$(basename "$d")
             BASE_PKG["$base"]="$base"
@@ -220,19 +183,9 @@ jobs:
             ADDED=false
             while IFS= read -r pkg; do
               [ -z "$pkg" ] && continue
-              template="pkgs/$pkg/template"
+              template="$WORKSPACE/pkgs/$pkg/template"
               [ -f "$template" ] || continue
-              awk '
-                /^makedepends=/ {
-                  sub(/^makedepends=/, "")
-                  if (/^"/ && /"$/) { gsub(/"/, ""); print; next }
-                  if (/^"/) { sub(/^"/, ""); buf = $0; in_block = 1; next }
-                }
-                in_block {
-                  if (/"$/) { sub(/"$/, ""); print buf " " $0; in_block = 0 }
-                  else { buf = buf " " $0 }
-                }
-              ' "$template" 2>/dev/null | while IFS= read -r deps; do
+              awk '/^makedepends=/ { sub(/^makedepends=/, ""); if (/^"/ && /"$/) { gsub(/"/, ""); print; next } if (/^"/) { sub(/^"/, ""); buf = $0; in_block = 1; next } } in_block { if (/"$/) { sub(/"$/, ""); print buf " " $0; in_block = 0 } else { buf = buf " " $0 } }' "$template" 2>/dev/null | while IFS= read -r deps; do
                 for dep in $deps; do
                   dep=$(echo "$dep" | xargs)
                   [ -z "$dep" ] && continue
@@ -248,67 +201,42 @@ jobs:
             [ "$ADDED" = "false" ] && break
           done
 
-          echo "Packages to build (dependencies resolved):"
+          echo "Packages to build:"
           cat changed-packages.txt
 
-          export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
-          export XBPS_BUILD_ENVIRONMENT="${XBPS_BUILD_ENVIRONMENT:-void-packages-ci}"
-          mkdir -p void-packages/etc
-          echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
-
-          for i in 1 2 3; do
-            if ./void-packages/xbps-src binary-bootstrap; then
-              echo "Bootstrap succeeded."
-              break
-            fi
-            echo "Bootstrap attempt $i failed, retrying in 5s..."
-            sleep 5
-          done
-
+          # Build
           XBPS_MAKEJOBS=$(nproc)
-          FAILED_PKGS=()
+          FAILED=()
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
-            LOG="/tmp/build-${pkg}.log"
-            if ! ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1 | tee "$LOG"; then
+            if ! sudo -Eu builder ./xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1; then
               echo "::error::Build failed for $pkg"
-              FAILED_PKGS+=("$pkg")
+              FAILED+=("$pkg")
             fi
           done < changed-packages.txt
-          if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
-            echo "The following packages failed to build: ${FAILED_PKGS[*]}"
-            exit 1
-          fi
+          [ ${#FAILED[@]} -gt 0 ] && { echo "Failed: ${FAILED[*]}"; exit 1; }
 
-          mkdir -p repo
-          BINPKGS_DIR="void-packages/hostdir/binpkgs"
-          if [ -d "$BINPKGS_DIR" ]; then
-            for f in "$BINPKGS_DIR"/*.xbps; do
-              [ -f "$f" ] || continue
-              cp "$f" repo/
+          # Collect packages
+          mkdir -p "$WORKSPACE/repo"
+          BINPKGS="hostdir/binpkgs"
+          for f in "$BINPKGS"/*.xbps; do
+            [ -f "$f" ] && cp "$f" "$WORKSPACE/repo/"
+          done
+          [ -d "$BINPKGS/nonfree" ] && {
+            mkdir -p "$WORKSPACE/repo/nonfree"
+            for f in "$BINPKGS/nonfree"/*.xbps; do
+              [ -f "$f" ] && cp "$f" "$WORKSPACE/repo/nonfree/"
             done
-            if [ -d "$BINPKGS_DIR/nonfree" ]; then
-              mkdir -p repo/nonfree
-              for f in "$BINPKGS_DIR/nonfree"/*.xbps; do
-                [ -f "$f" ] || continue
-                cp "$f" repo/nonfree/
-              done
-            fi
-          fi
+          }
           PKGS_BUILT=false
-          if ls repo/*.xbps 1>/dev/null 2>&1; then
-            xbps-rindex -a repo/*.xbps 2>/dev/null
-            PKGS_BUILT=true
-          fi
-          if [ -d repo/nonfree ] && ls repo/nonfree/*.xbps 1>/dev/null 2>&1; then
-            xbps-rindex -a repo/nonfree/*.xbps 2>/dev/null
-            PKGS_BUILT=true
-          fi
-          if [ "$PKGS_BUILT" = "true" ]; then
-            echo "packages_built=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "packages_built=false" >> "$GITHUB_OUTPUT"
-          fi
+          for dir in "$WORKSPACE/repo" "$WORKSPACE/repo/nonfree"; do
+            [ -d "$dir" ] && ls "$dir"/*.xbps >/dev/null 2>&1 && {
+              xbps-rindex -a "$dir"/*.xbps 2>/dev/null
+              PKGS_BUILT=true
+            }
+          done
+          [ "$PKGS_BUILT" = "true" ] && echo "packages_built=true" >> "$GITHUB_OUTPUT" \
+            || echo "packages_built=false" >> "$GITHUB_OUTPUT"
 
       - name: Sign repository
         if: steps.build.outputs.packages_built == 'true'
@@ -319,65 +247,42 @@ jobs:
         run: |
           HAS_MAIN=$(ls repo/*.xbps 2>/dev/null | head -1)
           HAS_NONFREE=$(ls repo/nonfree/*.xbps 2>/dev/null | head -1)
-          if [ ! -d repo ] || { [ -z "$HAS_MAIN" ] && [ -z "$HAS_NONFREE" ]; }; then
-            echo "No .xbps files found in repo/. Build packages first."
-            exit 1
-          fi
-          if [ -z "$XBPS_SIGNEDBY" ]; then
-            echo "Error: XBPS_SIGNEDBY is not set."
-            exit 1
-          fi
+          [ -z "$HAS_MAIN" ] && [ -z "$HAS_NONFREE" ] && { echo "No packages"; exit 1; }
+          [ -z "$XBPS_SIGNEDBY" ] && { echo "XBPS_SIGNEDBY not set"; exit 1; }
 
           mkdir -p keys
           if [ -n "$XBPS_PUBKEY" ]; then
-            if [ -f "$XBPS_PUBKEY" ]; then
-              cp "$XBPS_PUBKEY" keys/pub.pem
-            elif echo "$XBPS_PUBKEY" | grep -q "^-----BEGIN"; then
+            if echo "$XBPS_PUBKEY" | grep -q "^-----BEGIN"; then
               echo "$XBPS_PUBKEY" > keys/pub.pem
+            elif [ -f "$XBPS_PUBKEY" ]; then
+              cp "$XBPS_PUBKEY" keys/pub.pem
             fi
-            chmod 644 keys/pub.pem 2>/dev/null || true
           fi
 
           KEY_ARG=""
           if [ -n "$XBPS_PRIVKEY" ]; then
-            if [ -f "$XBPS_PRIVKEY" ]; then
-              KEY_ARG="--privkey $XBPS_PRIVKEY"
-            elif echo "$XBPS_PRIVKEY" | grep -q "^-----BEGIN"; then
+            if echo "$XBPS_PRIVKEY" | grep -q "^-----BEGIN"; then
               TMP_KEY=$(mktemp /tmp/xbps-privkey.XXXXXXXXXX.pem)
               trap 'rm -f "$TMP_KEY"' EXIT
               echo "$XBPS_PRIVKEY" > "$TMP_KEY"
               chmod 600 "$TMP_KEY"
               KEY_ARG="--privkey $TMP_KEY"
+            elif [ -f "$XBPS_PRIVKEY" ]; then
+              KEY_ARG="--privkey $XBPS_PRIVKEY"
             fi
           fi
 
           SIGN_CMD=(xbps-rindex --sign --signedby "$XBPS_SIGNEDBY")
           [ -n "$KEY_ARG" ] && SIGN_CMD+=(--privkey "${KEY_ARG#--privkey }")
-          SIGN_CMD+=(repo)
-
-          echo "Signing repository as \"$XBPS_SIGNEDBY\"..."
-          "${SIGN_CMD[@]}"
-
-          if [ -d repo/nonfree ]; then
-            echo "Signing nonfree repository..."
-            xbps-rindex --sign --signedby "$XBPS_SIGNEDBY" ${KEY_ARG} repo/nonfree 2>/dev/null || true
-          fi
-
-          if [ -n "$KEY_ARG" ]; then
-            for pkg in repo/*.xbps repo/nonfree/*.xbps; do
-              [ -f "$pkg" ] || continue
-              xbps-rindex --sign-pkg --signedby "$XBPS_SIGNEDBY" --privkey "${KEY_ARG#--privkey }" "$pkg" 2>/dev/null || true
-            done
-          fi
+          "${SIGN_CMD[@]}" repo
+          [ -d repo/nonfree ] && xbps-rindex --sign --signedby "$XBPS_SIGNEDBY" ${KEY_ARG} repo/nonfree 2>/dev/null || true
 
       - name: Prepare Pages artifact
         run: |
           rm -rf public
           mkdir -p public/keys
           cp -a repo/. public/ 2>/dev/null || true
-          if [ -f keys/pub.pem ]; then
-            cp keys/pub.pem public/keys/pub.pem
-          fi
+          [ -f keys/pub.pem ] && cp keys/pub.pem public/keys/pub.pem
           touch public/.nojekyll
           bash scripts/generate-index.sh public
 
@@ -406,28 +311,19 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
         run: |
-          if ! command -v gh &>/dev/null; then echo "Error: gh not found"; exit 1; fi
-          if ! gh auth status 2>/dev/null; then echo "Error: not authenticated"; exit 1; fi
-
-          TAG="repo-$(date +%Y%m%d)-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-          echo "Publishing release $TAG..."
-
-          gh release view "$TAG" --repo "$GITHUB_REPO" &>/dev/null && \
-            gh release delete "$TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null || true
-
+          TAG="repo-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
+          gh release view "$TAG" --repo "${{ github.repository }}" &>/dev/null && \
+            gh release delete "$TAG" --repo "${{ github.repository }}" --yes 2>/dev/null || true
           gh release create "$TAG" \
-            --repo "$GITHUB_REPO" \
+            --repo "${{ github.repository }}" \
             --title "Package repository $TAG" \
-            --notes "Automated build from commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown)." \
+            --notes "Automated build from commit $(git rev-parse --short HEAD)." \
             repo/*.xbps repo/*.sig* 2>/dev/null || true
-
           for f in repo/*.fdb repo/*.flist; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --repo "$GITHUB_REPO" 2>/dev/null || true
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --repo "${{ github.repository }}" 2>/dev/null || true
           done
-
-          [ -f keys/pub.pem ] && gh release upload "$TAG" keys/pub.pem --repo "$GITHUB_REPO" 2>/dev/null || true
+          [ -f keys/pub.pem ] && gh release upload "$TAG" keys/pub.pem --repo "${{ github.repository }}" 2>/dev/null || true
 
   deploy-pages:
     runs-on: ubuntu-latest

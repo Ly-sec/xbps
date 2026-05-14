@@ -12,6 +12,9 @@ concurrency:
 jobs:
   check-updates:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-glibc-full:latest
+      options: --privileged
     timeout-minutes: 30
     permissions:
       contents: write
@@ -22,78 +25,109 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run update scripts
+      - name: Prepare container
+        run: |
+          xbps-install -Syu xbps
+          xbps-install -y git curl
+          useradd -G xbuilder -M builder
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Setup void-packages
+        run: |
+          git clone --depth=1 https://github.com/void-linux/void-packages.git /void-packages
+          cd /void-packages
+          echo XBPS_BUILD_ENVIRONMENT=void-packages-ci >> etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+          echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+          chown -R builder:xbuilder .
+
+          # Copy pkgs as overlays for update-check
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+            dst="srcpkgs/$pkg"
+            rm -rf "$dst"
+            mkdir -p "$dst"
+            cp "$pkgdir/template" "$dst/template"
+          done
+          sudo -Eu builder ./xbps-src binary-bootstrap
+
+      - name: Run update checks
         id: updates
         run: |
-          for script in pkgs/*/update; do
-            [ -f "$script" ] || continue
-            pkg="$(basename "$(dirname "$script")")"
-            echo "Checking $pkg..."
-            bash "$script" | tee -a updates-output.txt
+          cd /void-packages
+
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
+            [ -d "$pkgdir" ] || continue
+            [ -f "$pkgdir/template" ] || continue
+            pkg="$(basename "$pkgdir")"
+
+            # Git-based packages (version=0) use their custom update script
+            if grep -q '^version=0$' "$pkgdir/template" && [ -f "$pkgdir/update" ]; then
+              echo "Checking $pkg via update script..."
+              (cd "$pkgdir" && bash ./update)
+              continue
+            fi
+
+            # Standard packages use xbps-src update-check
+            echo "Checking $pkg via xbps-src update-check..."
+            UPDATE=$(sudo -Eu builder sh -c "cd /void-packages && ./xbps-src update-check $pkg 2>/dev/null" | tail -1 || true)
+            echo "$UPDATE" | grep -q ' -> ' || continue
+
+            OLD_VER=$(echo "$UPDATE" | awk -F' -> ' '{print $1}' | rev | cut -d- -f1 | rev)
+            NEW_VER=$(echo "$UPDATE" | awk -F' -> ' '{print $2}' | rev | cut -d- -f1 | rev | tr -d '\n\r')
+            [ -z "$NEW_VER" ] && continue
+            [ "$OLD_VER" = "$NEW_VER" ] && continue
+
+            echo "=> $pkg: $OLD_VER -> $NEW_VER"
+            echo "UPDATE:$pkg|$OLD_VER|$NEW_VER" >> "$GITHUB_WORKSPACE/updates.txt"
           done
 
       - name: Create pull requests for updates
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
         run: |
-          grep "^UPDATE:" updates-output.txt > update-lines.txt || true
-
-          if [ ! -s update-lines.txt ]; then
-            echo "No package updates found."
-            exit 0
-          fi
+          [ ! -f updates.txt ] && { echo "No updates found."; exit 0; }
 
           git config user.name "Ly-sec"
           git config user.email "void@lysec.dev"
           BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-          while IFS='|' read -r pkg current latest cksum1 cksum2; do
+          while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
             echo "Processing $pkg: $current -> $latest"
 
             branch="update/${pkg}-${latest}"
-
-            EXISTING_PR=$(gh pr list \
-              --repo "${{ github.repository }}" \
-              --head "$branch" \
-              --state open \
-              --json number \
-              --jq '.[0].number' || echo "")
-
-            if [ -n "$EXISTING_PR" ]; then
-              echo "PR #$EXISTING_PR already exists for $branch, skipping"
-              continue
-            fi
+            EXISTING_PR=$(gh pr list --repo "${{ github.repository }}" --head "$branch" --state open --json number --jq '.[0].number' || echo "")
+            [ -n "$EXISTING_PR" ] && { echo "PR #$EXISTING_PR already exists, skipping"; continue; }
 
             git checkout -B "$branch"
-
             template="pkgs/$pkg/template"
             sed -i "s/^version=.*/version=$latest/" "$template"
             sed -i "s/^revision=.*/revision=1/" "$template"
 
-            if [ -n "$cksum2" ]; then
-              line_nums=$(grep -n "^checksum=" "$template" | cut -d: -f1 | head -2)
-              set -- $line_nums
-              sed -i "${1}s/^checksum=.*/checksum=$cksum1/" "$template"
-              sed -i "${2}s/^checksum=.*/checksum=$cksum2/" "$template"
-            else
-              sed -i "s/^checksum=.*/checksum=$cksum1/" "$template"
+            # Regenerate checksum if the template has distfiles
+            if grep -q '^distfiles=' "$template"; then
+              # Copy template to void-packages for xgensum
+              mkdir -p "/void-packages/srcpkgs/$pkg"
+              cp "$template" "/void-packages/srcpkgs/$pkg/template"
+              chown builder:builder "/void-packages/srcpkgs/$pkg/template"
+              if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
+                cp "/void-packages/srcpkgs/$pkg/template" "$template"
+                echo "=> $pkg checksums regenerated"
+              fi
             fi
 
             git add "$template"
             git commit -m "$pkg: update to $latest"
-
-            if git push origin "$branch" --force; then
-              gh pr create \
-                --repo "${{ github.repository }}" \
-                --title "$pkg: update $current -> $latest" \
-                --body "Update $pkg from $current to $latest." \
-                --base "$BASE_BRANCH" \
-                --head "$branch" || echo "Failed to create PR for $pkg"
-            else
-              echo "Failed to push branch $branch for $pkg"
-            fi
-
+            git push origin "$branch" --force
+            gh pr create \
+              --repo "${{ github.repository }}" \
+              --title "$pkg: update $current -> $latest" \
+              --body "Update $pkg from $current to $latest." \
+              --base "$BASE_BRANCH" \
+              --head "$branch" || true
             git checkout "$BASE_BRANCH"
-          done < update-lines.txt
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          done < updates.txt

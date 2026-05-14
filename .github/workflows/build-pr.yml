@@ -14,6 +14,9 @@ jobs:
   build:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-glibc-full:latest
+      options: --privileged
     timeout-minutes: 180
 
     steps:
@@ -21,200 +24,100 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Prepare container
+        run: |
+          xbps-install -Syu xbps
+          xbps-install -y git curl
+          useradd -G xbuilder -M builder
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Detect changed packages
         id: detect
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          CHANGED=$(git diff --name-only "$BASE"...HEAD -- 'pkgs/*/template' \
+          CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD -- 'pkgs/*/template' \
             | sed 's|/template$||' | sort -u || true)
-
           if [ -z "$CHANGED" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No package templates changed in this PR."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Changed packages:"
-            echo "$CHANGED"
-            # Write to file for later steps
             echo "$CHANGED" > changed-packages.txt
           fi
 
-      - name: Install xbps tools
+      - name: Setup void-packages
         if: steps.detect.outputs.changed == 'true'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd
-          curl -sL "https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz" \
-            | sudo tar xJ -C / --strip-components=1
-
-      - name: Configure xbps-uchroot
-        if: steps.detect.outputs.changed == 'true'
-        run: |
-          UCHROOT_BIN="$(command -v xbps-uchroot)"
-          if [ -z "$UCHROOT_BIN" ]; then
-            echo "xbps-uchroot not found"
-            exit 1
-          fi
-          sudo chown root:root "$UCHROOT_BIN"
-          sudo chmod 4755 "$UCHROOT_BIN"
-
-      - name: Clone upstream void-packages
-        if: steps.detect.outputs.changed == 'true'
-        run: git clone --depth=1 https://github.com/void-linux/void-packages.git
+          git clone --depth=1 https://github.com/void-linux/void-packages.git /void-packages
+          cd /void-packages
+          echo XBPS_BUILD_ENVIRONMENT=void-packages-ci >> etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+          echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+          chown -R builder:xbuilder .
 
       - name: Copy overlays and bootstrap
         if: steps.detect.outputs.changed == 'true'
         run: |
-          git -C void-packages fetch --depth=1 origin master
-          git -C void-packages reset --hard origin/master
+          cd /void-packages
 
-          # Run update scripts for packages with placeholder versions
-          for pkgdir in pkgs/*/; do
-            [ -f "$pkgdir/update" ] || continue
-            [ -f "$pkgdir/template" ] || continue
-            if grep -q '^version=0$' "$pkgdir/template"; then
-              echo "Running update for $(basename "$pkgdir")..."
-              (cd "$pkgdir" && ./update)
-            fi
-          done
-
-          for pkgdir in pkgs/*/; do
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -d "$pkgdir" ] || continue
             [ -f "$pkgdir/template" ] || continue
             pkg="$(basename "$pkgdir")"
-            dst="void-packages/srcpkgs/$pkg"
+            dst="srcpkgs/$pkg"
             rm -rf "$dst"
             mkdir -p "$dst"
             cp "$pkgdir/template" "$dst/template"
-            if [ -d "$pkgdir/patches" ]; then cp -r "$pkgdir/patches" "$dst/"; fi
-            if [ -d "$pkgdir/files" ]; then cp -r "$pkgdir/files" "$dst/"; fi
-            if [ -f "$pkgdir/update" ]; then cp "$pkgdir/update" "$dst/update"; fi
-            for extra in INSTALL REMOVE options; do
-              if [ -f "$pkgdir/$extra" ]; then cp "$pkgdir/$extra" "$dst/$extra"; fi
+            for extra in INSTALL REMOVE patches files update options; do
+              [ -e "$pkgdir/$extra" ] && cp -r "$pkgdir/$extra" "$dst/"
             done
           done
-          for f in pkgs/*; do
-            [ -f "$f" ] || [ -L "$f" ] || continue
-            cp -P "$f" "void-packages/srcpkgs/$(basename "$f")"
-          done
 
-          if [ -f pkgs/common/shlibs ]; then
-            cat pkgs/common/shlibs >> void-packages/common/shlibs
+          if [ -f "$GITHUB_WORKSPACE/pkgs/common/shlibs" ]; then
+            cat "$GITHUB_WORKSPACE/pkgs/common/shlibs" >> common/shlibs
           fi
 
-          export XBPS_CHROOT_CMD="${XBPS_CHROOT_CMD:-uchroot}"
-          export XBPS_BUILD_ENVIRONMENT="${XBPS_BUILD_ENVIRONMENT:-void-packages-ci}"
-          mkdir -p void-packages/etc
-          echo 'XBPS_ALLOW_RESTRICTED=yes' > void-packages/etc/conf
-
-          for i in 1 2 3; do
-            if ./void-packages/xbps-src binary-bootstrap; then
-              echo "Bootstrap succeeded."
-              break
-            fi
-            echo "Bootstrap attempt $i failed, retrying in 5s..."
-            sleep 5
+          # Run update scripts for git-based packages
+          for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
+            [ -f "$pkgdir/update" ] && grep -q '^version=0$' "$pkgdir/template" && {
+              echo "Running update for $(basename "$pkgdir")..."
+              (cd "$pkgdir" && bash ./update)
+              cp "$pkgdir/template" "srcpkgs/$(basename "$pkgdir")/template"
+            }
           done
 
-      - name: Resolve custom package dependencies
-        if: steps.detect.outputs.changed == 'true'
-        run: |
-          # Extract package names from the path format (pkgs/<pkgname>)
-          PKG_NAMES=$(mktemp)
-          sed 's|^pkgs/||' changed-packages.txt | sort -u > "$PKG_NAMES"
-
-          # Build subpackage-to-base mapping
-          declare -A BASE_PKG
-          for d in pkgs/*/; do
-            [ -f "$d/template" ] || continue
-            base=$(basename "$d")
-            BASE_PKG["$base"]="$base"
-            while IFS= read -r line; do
-              case "$line" in
-                *_package\(\)*)
-                  sub=$(echo "$line" | sed 's/^[[:space:]]*//; s/_package().*//')
-                  [ -n "$sub" ] && [ "$sub" != "$base" ] && BASE_PKG["$sub"]="$base"
-                  ;;
-              esac
-            done < "$d/template"
-          done
-
-          # Resolve until stable
-          while true; do
-            ADDED=false
-            while IFS= read -r pkg; do
-              [ -z "$pkg" ] && continue
-              template="pkgs/$pkg/template"
-              [ -f "$template" ] || continue
-              awk '
-                /^makedepends=/ {
-                  sub(/^makedepends=/, "")
-                  if (/^"/ && /"$/) { gsub(/"/, ""); print; next }
-                  if (/^"/) { sub(/^"/, ""); buf = $0; in_block = 1; next }
-                }
-                in_block {
-                  if (/"$/) { sub(/"$/, ""); print buf " " $0; in_block = 0 }
-                  else { buf = buf " " $0 }
-                }
-              ' "$template" 2>/dev/null | while IFS= read -r deps; do
-                for dep in $deps; do
-                  dep=$(echo "$dep" | xargs)
-                  [ -z "$dep" ] && continue
-                  base="${BASE_PKG[$dep]:-}"
-                  [ -z "$base" ] && continue
-                  grep -qxF "$base" "$PKG_NAMES" 2>/dev/null && continue
-                  echo "$base" >> "$PKG_NAMES"
-                  ADDED=true
-                done
-              done
-            done < "$PKG_NAMES"
-            sort -u "$PKG_NAMES" -o "$PKG_NAMES"
-            [ "$ADDED" = "false" ] && break
-          done
-
-          # Write back in path format expected by the build step
-          sed 's/^/pkgs\//' "$PKG_NAMES" > changed-packages.txt
-          echo "Packages to build (dependencies resolved):"
-          cat changed-packages.txt
+          sudo -Eu builder ./xbps-src binary-bootstrap
 
       - name: Build changed packages
         if: steps.detect.outputs.changed == 'true'
         run: |
-          echo "failure" > build-status.txt
-          XBPS_MAKEJOBS=$(nproc)
+          cd /void-packages
           BUILD_LOG=$(mktemp)
+          XBPS_MAKEJOBS=$(nproc)
 
           while IFS= read -r pkgdir; do
             [ -z "$pkgdir" ] && continue
             pkg="$(basename "$pkgdir")"
             echo "Building $pkg..."
-
-            if ! ./void-packages/xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1 | tee -a "$BUILD_LOG"; then
+            if ! sudo -Eu builder ./xbps-src -j "$XBPS_MAKEJOBS" pkg "$pkg" 2>&1 | tee -a "$BUILD_LOG"; then
               tail -60 "$BUILD_LOG" > build-error.txt
               exit 1
             fi
-          done < changed-packages.txt
-
-          echo "success" > build-status.txt
+          done < "$GITHUB_WORKSPACE/changed-packages.txt"
 
       - name: Comment build result on PR
         if: always()
-        run: |
-          if [ ! -s changed-packages.txt ]; then
-            echo "No packages changed, skipping comment."
-            exit 0
-          fi
-
-          if [ -s build-error.txt ]; then
-            ERROR=$(head -100 build-error.txt)
-            BODY=$(printf 'Build failed:\n\n```\n%s\n```' "$ERROR")
-          else
-            PACKAGES=$(cat changed-packages.txt | sed 's|pkgs/||')
-            BODY=$(printf 'Packages built successfully:\n```\n%s\n```' "$PACKAGES")
-          fi
-
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --body "$BODY" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -s changed-packages.txt ]; then
+            exit 0
+          fi
+          if [ -s build-error.txt ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "Build failed:\n\n\`\`\`\n$(head -100 build-error.txt)\n\`\`\`" || true
+          else
+            PACKAGES=$(cat "$GITHUB_WORKSPACE/changed-packages.txt" | sed 's|pkgs/||')
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "Packages built successfully:\n\`\`\`\n$PACKAGES\n\`\`\`" || true
+          fi
