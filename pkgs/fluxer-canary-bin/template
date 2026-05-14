@@ -18,7 +18,7 @@ case "$XBPS_TARGET_MACHINE" in
 	x86_64)
 		_arch=x64
 		distfiles="https://api.fluxer.app/dl/desktop/canary/linux/x64/${version}/tar_gz>fluxer-${version}-x64.tar.gz"
-		checksum=e2d6b6228364e93219bf54364c43d0a4356c8eb96f4849f8cd34224e759c3726
+		checksum=d7991abd498c6a2be1e07d2e7f7d7f9679ee68363f282542d32e5790d64bd805
 		;;
 	aarch64)
 		_arch=arm64
