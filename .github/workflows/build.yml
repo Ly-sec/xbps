@@ -35,6 +35,9 @@ jobs:
       image: ghcr.io/void-linux/void-glibc-full:latest
       options: --privileged
     timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
     outputs:
       packages_built: ${{ steps.build.outputs.packages_built }}
 

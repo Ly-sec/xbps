@@ -17,6 +17,9 @@ jobs:
     container:
       image: ghcr.io/void-linux/void-glibc-full:latest
       options: --privileged
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 180
 
     steps:
