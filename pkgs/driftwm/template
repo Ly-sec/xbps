@@ -1,0 +1,17 @@
+pkgname=driftwm
+version=0.6.0
+revision=1
+build_style=cargo
+short_desc="Trackpad-first infinite canvas Wayland compositor"
+maintainer="Ly-sec <void@lysec.dev>"
+homepage="https://github.com/malbiruk/driftwm"
+license="GPL-3.0-or-later"
+depends="libdisplay-info libinput seatd mesa libxkbcommon"
+hostmakedepends="cargo pkg-config"
+
+distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar.gz"
+checksum=SKIP
+
+do_install() {
+	make install DESTDIR="$DESTDIR" PREFIX=/usr
+}
