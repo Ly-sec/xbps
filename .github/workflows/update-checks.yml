@@ -54,7 +54,9 @@ jobs:
 
       - name: Run update checks and commit
         run: |
-          set +e
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE/.git" || echo "No .git found!"
 
           cd /void-packages
 
@@ -91,19 +93,22 @@ jobs:
           done
 
           # Commit any updates
-          if [ ! -f "$GITHUB_WORKSPACE/updates.txt" ]; then
+          cd "$GITHUB_WORKSPACE"
+          pwd
+
+          if [ ! -f updates.txt ]; then
             echo "No updates found."
             exit 0
           fi
 
-          git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
-          git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
+          git config user.name "Ly-sec"
+          git config user.email "void@lysec.dev"
 
           while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
             echo "Processing $pkg: $current -> $latest"
 
-            template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
+            template="pkgs/$pkg/template"
             sed -i "s/^version=.*/version=$latest/" "$template"
             sed -i "s/^revision=.*/revision=1/" "$template"
 
@@ -117,12 +122,10 @@ jobs:
               fi
             fi
 
-            git -C "$GITHUB_WORKSPACE" add "$template"
-          done < "$GITHUB_WORKSPACE/updates.txt"
+            git add "$template"
+          done < updates.txt
 
-          if git -C "$GITHUB_WORKSPACE" diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
-            git -C "$GITHUB_WORKSPACE" push
-          fi
+          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
+
+          git commit -m "chore(pkgs): auto-update packages"
+          git push
