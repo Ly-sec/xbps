@@ -2,7 +2,7 @@ name: Check package updates
 
 on:
   schedule:
-    - cron: '0 9 * * 1'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -86,6 +86,7 @@ jobs:
       - name: Commit updates directly
         if: always()
         run: |
+          cd "$GITHUB_WORKSPACE"
           [ ! -f updates.txt ] && { echo "No updates found."; exit 0; }
 
           git config user.name "Ly-sec"
