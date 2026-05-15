@@ -1,5 +1,5 @@
 pkgname=electron40
-version=40.10.0
+version=42.1.0
 revision=1
 archs="x86_64"
 short_desc="Cross platform application framework based on web technologies"
