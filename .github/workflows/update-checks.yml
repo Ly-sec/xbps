@@ -20,8 +20,9 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Install git and checkout repository
         run: |
+          xbps-install -Sy git
           git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$GITHUB_WORKSPACE"
 
       - name: Prepare container
