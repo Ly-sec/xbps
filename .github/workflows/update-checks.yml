@@ -85,6 +85,11 @@ jobs:
             [ -z "$NEW_VER" ] && continue
             [ "$OLD_VER" = "$NEW_VER" ] && continue
 
+            # Skip major version bumps (e.g. electron38: 38.x -> 42.x)
+            OLD_MAJOR=$(echo "$OLD_VER" | cut -d. -f1)
+            NEW_MAJOR=$(echo "$NEW_VER" | cut -d. -f1)
+            [ "$OLD_MAJOR" != "$NEW_MAJOR" ] && { echo "=> $pkg: skipping major bump $OLD_VER -> $NEW_VER"; continue; }
+
             echo "=> $pkg: $OLD_VER -> $NEW_VER"
             echo "UPDATE:$pkg|$OLD_VER|$NEW_VER" >> "$GITHUB_WORKSPACE/updates.txt"
           done
@@ -111,10 +116,12 @@ jobs:
             if grep -q '^distfiles=' "$template"; then
               mkdir -p "/void-packages/srcpkgs/$pkg"
               cp "$template" "/void-packages/srcpkgs/$pkg/template"
-              chown builder:builder "/void-packages/srcpkgs/$pkg/template"
-              if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
+              chown -R builder:xbuilder "/void-packages/srcpkgs/$pkg"
+              if sudo -Eu builder sh -c "cd /void-packages && ./xgensum -i srcpkgs/$pkg/template 2>&1"; then
                 cp "/void-packages/srcpkgs/$pkg/template" "$template"
                 echo "=> $pkg checksums regenerated"
+              else
+                echo "=> $pkg checksum update failed"
               fi
             fi
 
