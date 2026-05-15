@@ -86,17 +86,16 @@ jobs:
       - name: Commit updates directly
         if: always()
         run: |
-          cd "$GITHUB_WORKSPACE"
-          [ ! -f updates.txt ] && { echo "No updates found."; exit 0; }
+          [ ! -f "$GITHUB_WORKSPACE/updates.txt" ] && { echo "No updates found."; exit 0; }
 
-          git config user.name "Ly-sec"
-          git config user.email "void@lysec.dev"
+          git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
+          git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
 
           while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
             echo "Processing $pkg: $current -> $latest"
 
-            template="pkgs/$pkg/template"
+            template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
             sed -i "s/^version=.*/version=$latest/" "$template"
             sed -i "s/^revision=.*/revision=1/" "$template"
 
@@ -111,13 +110,13 @@ jobs:
               fi
             fi
 
-            git add "$template"
-          done < updates.txt
+            git -C "$GITHUB_WORKSPACE" add "$template"
+          done < "$GITHUB_WORKSPACE/updates.txt"
 
-          if git diff --cached --quiet; then
+          if git -C "$GITHUB_WORKSPACE" diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "chore(pkgs): auto-update packages"
-          git push
+          git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
+          git -C "$GITHUB_WORKSPACE" push
