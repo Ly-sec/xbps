@@ -20,9 +20,9 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - name: Checkout repository
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$GITHUB_WORKSPACE"
 
       - name: Prepare container
         run: |
@@ -54,10 +54,6 @@ jobs:
 
       - name: Run update checks and commit
         run: |
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          ls -la "$GITHUB_WORKSPACE"
-          ls -la "$GITHUB_WORKSPACE/.git" || echo "No .git found!"
-
           cd /void-packages
 
           for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
@@ -94,7 +90,6 @@ jobs:
 
           # Commit any updates
           cd "$GITHUB_WORKSPACE"
-          pwd
 
           if [ ! -f updates.txt ]; then
             echo "No updates found."
