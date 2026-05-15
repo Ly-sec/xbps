@@ -1,7 +1,7 @@
 # Template file for 'nirimation'
 # Run ./pkgs/nirimation/update to set version to the latest commit.
 pkgname=nirimation
-version=0
+version=a5f8f8b
 revision=1
 short_desc="Animations for the Niri Wayland compositor"
 maintainer="XansiDev <chaoscatsofficial@gmail.com>"

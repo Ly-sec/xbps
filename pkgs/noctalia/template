@@ -1,7 +1,7 @@
 # Template file for 'noctalia'
 # Run ./pkgs/noctalia/update to set version to the latest v5 commit.
 pkgname=noctalia
-version=0
+version=42b9442
 revision=1
 build_style=meson
 buildtype=release
