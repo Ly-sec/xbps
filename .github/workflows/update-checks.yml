@@ -86,37 +86,37 @@ jobs:
       - name: Commit updates directly
         if: always()
         run: |
-          [ ! -f "$GITHUB_WORKSPACE/updates.txt" ] && { echo "No updates found."; exit 0; }
+          if [ -f "$GITHUB_WORKSPACE/updates.txt" ]; then
+            git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
+            git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
 
-          git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
-          git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
+            while IFS='|' read -r pkg current latest; do
+              pkg="${pkg#UPDATE:}"
+              echo "Processing $pkg: $current -> $latest"
 
-          while IFS='|' read -r pkg current latest; do
-            pkg="${pkg#UPDATE:}"
-            echo "Processing $pkg: $current -> $latest"
+              template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
+              sed -i "s/^version=.*/version=$latest/" "$template"
+              sed -i "s/^revision=.*/revision=1/" "$template"
 
-            template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
-            sed -i "s/^version=.*/version=$latest/" "$template"
-            sed -i "s/^revision=.*/revision=1/" "$template"
-
-            # Regenerate checksums if the template has distfiles
-            if grep -q '^distfiles=' "$template"; then
-              mkdir -p "/void-packages/srcpkgs/$pkg"
-              cp "$template" "/void-packages/srcpkgs/$pkg/template"
-              chown builder:builder "/void-packages/srcpkgs/$pkg/template"
-              if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
-                cp "/void-packages/srcpkgs/$pkg/template" "$template"
-                echo "=> $pkg checksums regenerated"
+              if grep -q '^distfiles=' "$template"; then
+                mkdir -p "/void-packages/srcpkgs/$pkg"
+                cp "$template" "/void-packages/srcpkgs/$pkg/template"
+                chown builder:builder "/void-packages/srcpkgs/$pkg/template"
+                if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
+                  cp "/void-packages/srcpkgs/$pkg/template" "$template"
+                  echo "=> $pkg checksums regenerated"
+                fi
               fi
+
+              git -C "$GITHUB_WORKSPACE" add "$template"
+            done < "$GITHUB_WORKSPACE/updates.txt"
+
+            if git -C "$GITHUB_WORKSPACE" diff --cached --quiet; then
+              echo "No changes to commit."
+            else
+              git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
+              git -C "$GITHUB_WORKSPACE" push
             fi
-
-            git -C "$GITHUB_WORKSPACE" add "$template"
-          done < "$GITHUB_WORKSPACE/updates.txt"
-
-          if git -C "$GITHUB_WORKSPACE" diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
+          else
+            echo "No updates found."
           fi
-
-          git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
-          git -C "$GITHUB_WORKSPACE" push
