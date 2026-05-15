@@ -29,7 +29,7 @@ jobs:
           xbps-install -Syu xbps
           xbps-install -y sudo bash git curl
           useradd -G xbuilder -M builder
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory '*'
 
       - name: Setup void-packages
         run: |
@@ -91,22 +91,19 @@ jobs:
           done
 
           # Commit any updates
-          cd "$GITHUB_WORKSPACE"
-          git status
-
-          if [ ! -f updates.txt ]; then
+          if [ ! -f "$GITHUB_WORKSPACE/updates.txt" ]; then
             echo "No updates found."
             exit 0
           fi
 
-          git config user.name "Ly-sec"
-          git config user.email "void@lysec.dev"
+          git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
+          git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
 
           while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
             echo "Processing $pkg: $current -> $latest"
 
-            template="pkgs/$pkg/template"
+            template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
             sed -i "s/^version=.*/version=$latest/" "$template"
             sed -i "s/^revision=.*/revision=1/" "$template"
 
@@ -120,12 +117,12 @@ jobs:
               fi
             fi
 
-            git add "$template"
-          done < updates.txt
+            git -C "$GITHUB_WORKSPACE" add "$template"
+          done < "$GITHUB_WORKSPACE/updates.txt"
 
-          if git diff --cached --quiet; then
+          if git -C "$GITHUB_WORKSPACE" diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore(pkgs): auto-update packages"
-            git push
+            git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
+            git -C "$GITHUB_WORKSPACE" push
           fi
