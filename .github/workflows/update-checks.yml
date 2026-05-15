@@ -52,9 +52,10 @@ jobs:
           done
           sudo -Eu builder ./xbps-src binary-bootstrap
 
-      - name: Run update checks
-        id: updates
+      - name: Run update checks and commit
         run: |
+          set +e
+
           cd /void-packages
 
           for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
@@ -65,7 +66,13 @@ jobs:
             # Git-based packages (version=0) use their custom update script
             if grep -q '^version=0$' "$pkgdir/template" && [ -f "$pkgdir/update" ]; then
               echo "Checking $pkg via update script..."
+              OLD_VER=$(grep '^version=' "$pkgdir/template" | head -1 | cut -d= -f2)
               (cd "$pkgdir" && sh ./update)
+              NEW_VER=$(grep '^version=' "$pkgdir/template" | head -1 | cut -d= -f2)
+              if [ "$OLD_VER" != "$NEW_VER" ] && [ -n "$NEW_VER" ]; then
+                echo "=> $pkg: $OLD_VER -> $NEW_VER"
+                echo "UPDATE:$pkg|$OLD_VER|$NEW_VER" >> "$GITHUB_WORKSPACE/updates.txt"
+              fi
               continue
             fi
 
@@ -83,40 +90,42 @@ jobs:
             echo "UPDATE:$pkg|$OLD_VER|$NEW_VER" >> "$GITHUB_WORKSPACE/updates.txt"
           done
 
-      - name: Commit updates directly
-        if: always()
-        run: |
-          if [ -f "$GITHUB_WORKSPACE/updates.txt" ]; then
-            git -C "$GITHUB_WORKSPACE" config user.name "Ly-sec"
-            git -C "$GITHUB_WORKSPACE" config user.email "void@lysec.dev"
+          # Commit any updates
+          cd "$GITHUB_WORKSPACE"
+          git status
 
-            while IFS='|' read -r pkg current latest; do
-              pkg="${pkg#UPDATE:}"
-              echo "Processing $pkg: $current -> $latest"
-
-              template="$GITHUB_WORKSPACE/pkgs/$pkg/template"
-              sed -i "s/^version=.*/version=$latest/" "$template"
-              sed -i "s/^revision=.*/revision=1/" "$template"
-
-              if grep -q '^distfiles=' "$template"; then
-                mkdir -p "/void-packages/srcpkgs/$pkg"
-                cp "$template" "/void-packages/srcpkgs/$pkg/template"
-                chown builder:builder "/void-packages/srcpkgs/$pkg/template"
-                if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
-                  cp "/void-packages/srcpkgs/$pkg/template" "$template"
-                  echo "=> $pkg checksums regenerated"
-                fi
-              fi
-
-              git -C "$GITHUB_WORKSPACE" add "$template"
-            done < "$GITHUB_WORKSPACE/updates.txt"
-
-            if git -C "$GITHUB_WORKSPACE" diff --cached --quiet; then
-              echo "No changes to commit."
-            else
-              git -C "$GITHUB_WORKSPACE" commit -m "chore(pkgs): auto-update packages"
-              git -C "$GITHUB_WORKSPACE" push
-            fi
-          else
+          if [ ! -f updates.txt ]; then
             echo "No updates found."
+            exit 0
+          fi
+
+          git config user.name "Ly-sec"
+          git config user.email "void@lysec.dev"
+
+          while IFS='|' read -r pkg current latest; do
+            pkg="${pkg#UPDATE:}"
+            echo "Processing $pkg: $current -> $latest"
+
+            template="pkgs/$pkg/template"
+            sed -i "s/^version=.*/version=$latest/" "$template"
+            sed -i "s/^revision=.*/revision=1/" "$template"
+
+            if grep -q '^distfiles=' "$template"; then
+              mkdir -p "/void-packages/srcpkgs/$pkg"
+              cp "$template" "/void-packages/srcpkgs/$pkg/template"
+              chown builder:builder "/void-packages/srcpkgs/$pkg/template"
+              if sudo -Eu builder sh -c "cd /void-packages && xgensum -i srcpkgs/$pkg/template" 2>/dev/null; then
+                cp "/void-packages/srcpkgs/$pkg/template" "$template"
+                echo "=> $pkg checksums regenerated"
+              fi
+            fi
+
+            git add "$template"
+          done < updates.txt
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore(pkgs): auto-update packages"
+            git push
           fi
