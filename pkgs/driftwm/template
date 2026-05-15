@@ -7,7 +7,7 @@ maintainer="Ly-sec <void@lysec.dev>"
 homepage="https://github.com/malbiruk/driftwm"
 license="GPL-3.0-or-later"
 depends="libdisplay-info libinput seatd mesa libxkbcommon libudev"
-hostmakedepends="cargo pkg-config libudev-devel seatd"
+hostmakedepends="cargo pkg-config libudev-devel libseat"
 
 distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar.gz"
 checksum=490abe7f7e6da7f3208eedf375792246919b82df3fe2cbe300c58697dec6c7a7
