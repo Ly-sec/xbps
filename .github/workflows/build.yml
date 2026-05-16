@@ -283,7 +283,11 @@ jobs:
             for pkg in "$dir"/*.xbps; do
               [ -f "$pkg" ] || continue
               [ -f "${pkg}.sig" ] && continue
-              "${SIGN_CMD[@]}" "$pkg" 2>/dev/null || true
+              if [ -n "$KEY_ARG" ]; then
+                xbps-uhelper sign-pkg ${KEY_ARG} "$pkg" 2>/dev/null || true
+              else
+                xbps-uhelper sign-pkg "$pkg" 2>/dev/null || true
+              fi
             done
           done
           
