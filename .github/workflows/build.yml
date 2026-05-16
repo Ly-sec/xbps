@@ -276,6 +276,17 @@ jobs:
 
           SIGN_CMD=(xbps-rindex --sign --signedby "$XBPS_SIGNEDBY")
           [ -n "$KEY_ARG" ] && SIGN_CMD+=(--privkey "${KEY_ARG#--privkey }")
+          
+          # Sign individual packages
+          for dir in repo repo/nonfree; do
+            [ -d "$dir" ] || continue
+            for pkg in "$dir"/*.xbps; do
+              [ -f "$pkg" ] || continue
+              [ -f "${pkg}.sig" ] && continue
+              "${SIGN_CMD[@]}" "$pkg" 2>/dev/null || true
+            done
+          done
+          
           "${SIGN_CMD[@]}" repo
           [ -d repo/nonfree ] && xbps-rindex --sign --signedby "$XBPS_SIGNEDBY" ${KEY_ARG} repo/nonfree 2>/dev/null || true
 
