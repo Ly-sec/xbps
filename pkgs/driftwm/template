@@ -13,5 +13,5 @@ distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar
 checksum=490abe7f7e6da7f3208eedf375792246919b82df3fe2cbe300c58697dec6c7a7
 
 do_install() {
-	make install DESTDIR="$DESTDIR" PREFIX=/usr
+	vinstall target/${RUST_TARGET}/release/driftwm 755 usr/bin
 }
