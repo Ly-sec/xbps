@@ -44,6 +44,7 @@ jobs:
           # Copy pkgs as overlays for update-check
           for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -d "$pkgdir" ] || continue
+            [ -L "$pkgdir" ] && continue
             [ -f "$pkgdir/template" ] || continue
             pkg="$(basename "$pkgdir")"
             dst="srcpkgs/$pkg"
@@ -59,10 +60,9 @@ jobs:
 
           for pkgdir in "$GITHUB_WORKSPACE/pkgs/"*/; do
             [ -d "$pkgdir" ] || continue
+            [ -L "$pkgdir" ] && continue
             [ -f "$pkgdir/template" ] || continue
             pkg="$(basename "$pkgdir")"
-
-            # Git-based packages (version=0) use their custom update script
             if grep -q '^version=0$' "$pkgdir/template" && [ -f "$pkgdir/update" ]; then
               echo "Checking $pkg via update script..."
               OLD_VER=$(grep '^version=' "$pkgdir/template" | head -1 | cut -d= -f2)
@@ -107,6 +107,7 @@ jobs:
 
           while IFS='|' read -r pkg current latest; do
             pkg="${pkg#UPDATE:}"
+            [ -L "pkgs/$pkg" ] && continue
             echo "Processing $pkg: $current -> $latest"
 
             template="pkgs/$pkg/template"
@@ -117,7 +118,7 @@ jobs:
               mkdir -p "/void-packages/srcpkgs/$pkg"
               cp "$template" "/void-packages/srcpkgs/$pkg/template"
               chown -R builder:xbuilder "/void-packages/srcpkgs/$pkg"
-              if sudo -Eu builder sh -c "cd /void-packages && ./xgensum -i srcpkgs/$pkg/template 2>&1"; then
+              if sudo -Eu builder sh -c "cd /void-packages && ./xbps-src digest $pkg 2>&1"; then
                 cp "/void-packages/srcpkgs/$pkg/template" "$template"
                 echo "=> $pkg checksums regenerated"
               else
