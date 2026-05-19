@@ -1,5 +1,5 @@
 pkgname=driftwm
-version=0.6.0
+version=0.7.0
 revision=1
 build_style=cargo
 short_desc="Trackpad-first infinite canvas Wayland compositor"

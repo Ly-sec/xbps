@@ -1,5 +1,5 @@
 pkgname=lefthook
-version=2.1.6
+version=2.1.8
 revision=1
 build_style=go
 go_import_path="github.com/evilmartians/lefthook/v2"
