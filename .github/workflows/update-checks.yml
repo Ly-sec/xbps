@@ -115,12 +115,11 @@ jobs:
             sed -i "s/^revision=.*/revision=1/" "$template"
 
             if grep -q '^distfiles=' "$template"; then
-              mkdir -p "/void-packages/srcpkgs/$pkg"
-              cp "$template" "/void-packages/srcpkgs/$pkg/template"
-              chown -R builder:xbuilder "/void-packages/srcpkgs/$pkg"
-              if sudo -Eu builder sh -c "cd /void-packages && ./xbps-src digest $pkg 2>&1"; then
-                cp "/void-packages/srcpkgs/$pkg/template" "$template"
-                echo "=> $pkg checksums regenerated"
+              distfiles=$(grep '^distfiles=' "$template" | head -1 | cut -d= -f2- | tr -d '"' | sed "s/\${version}/$latest/g")
+              new_checksum=$(curl -sL "$distfiles" | sha256sum | awk '{print $1}')
+              if [ -n "$new_checksum" ] && [ "$new_checksum" != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
+                sed -i "s/^checksum=.*/checksum=$new_checksum/" "$template"
+                echo "=> $pkg checksum regenerated"
               else
                 echo "=> $pkg checksum update failed"
               fi
