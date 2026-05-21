@@ -1,5 +1,5 @@
 pkgname=driftwm
-version=0.7.0
+version=0.8.0
 revision=1
 build_style=cargo
 short_desc="Trackpad-first infinite canvas Wayland compositor"
@@ -10,7 +10,7 @@ depends="libdisplay-info libinput seatd mesa libxkbcommon libudev"
 hostmakedepends="cargo pkg-config libudev-devel libseat-devel libdisplay-info-devel libinput-devel libxkbcommon-devel libgbm-devel"
 
 distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar.gz"
-checksum=490abe7f7e6da7f3208eedf375792246919b82df3fe2cbe300c58697dec6c7a7
+checksum=f58a8b1adcb9f13d3c22977b31f66d89ac1c00e98db6c3059a11f1e9a7e7b10c
 
 do_install() {
 	vinstall target/${RUST_TARGET}/release/driftwm 755 usr/bin
