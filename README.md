@@ -9,7 +9,7 @@ This is a minimal overlay repository for Void Linux custom packages and selected
 1. **Add the repository**
 
 ```sh
-echo "repository=https://xbps.lysec.dev/" | sudo tee /etc/xbps.d/20-lysec.conf
+echo "repository=https://xbps.lysec.dev" | sudo tee /etc/xbps.d/20-lysec.conf
 ```
 
 2. **Sync and import the key**
