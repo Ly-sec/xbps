@@ -1,6 +1,6 @@
 pkgname=driftwm
 version=0.8.0
-revision=1
+revision=2
 build_style=cargo
 short_desc="Trackpad-first infinite canvas Wayland compositor"
 maintainer="Ly-sec <void@lysec.dev>"
@@ -11,6 +11,11 @@ hostmakedepends="cargo pkg-config libudev-devel libseat-devel libdisplay-info-de
 
 distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar.gz"
 checksum=f58a8b1adcb9f13d3c22977b31f66d89ac1c00e98db6c3059a11f1e9a7e7b10c
+
+post_patch() {
+	# Upstream Cargo.lock is stale for git smithay deps; regenerate before --locked build.
+	cargo generate-lockfile
+}
 
 do_install() {
 	vinstall target/${RUST_TARGET}/release/driftwm 755 usr/bin
