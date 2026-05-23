@@ -28,7 +28,7 @@ scan_xbps_dir() {
     pkgname="${stripped%-*}"
     BUILT["$pkgname"]=1
     [ "$nonfree" = "1" ] && NONFREE["$pkgname"]=1
-    if [ -f "${f}.sig" ]; then
+    if [ -f "${f}.sig2" ]; then
       SIGNED["$pkgname"]=1
     fi
   done < <(find "$dir" -maxdepth 1 -type f -name '*.xbps' 2>/dev/null)
