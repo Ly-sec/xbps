@@ -253,6 +253,10 @@ jobs:
           [ -z "$XBPS_SIGNEDBY" ] && { echo "XBPS_SIGNEDBY not set"; exit 1; }
 
           mkdir -p keys
+
+          # Remove old signatures (cache may have stale ones from previous key)
+          find repo -maxdepth 2 -name '*.sig' -type f -delete 2>/dev/null || true
+
           if [ -n "$XBPS_PUBKEY" ]; then
             if echo "$XBPS_PUBKEY" | grep -q "^-----BEGIN"; then
               echo "$XBPS_PUBKEY" > keys/pub.pem
