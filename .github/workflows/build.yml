@@ -289,16 +289,10 @@ jobs:
           "${SIGN_CMD[@]}" repo
           [ -d repo/nonfree ] && xbps-rindex --sign --signedby "$XBPS_SIGNEDBY" ${KEY_ARG} repo/nonfree 2>/dev/null || true
 
-          # Rename .sig to .sig2 (GitHub Pages blocks .sig files)
-          for dir in repo repo/nonfree; do
-            [ -d "$dir" ] || continue
-            for f in "$dir"/*.sig; do
-              [ -f "$f" ] && mv "$f" "${f}.2"
-            done
-          done
-          for f in repo/*.sig; do
-            [ -f "$f" ] && mv "$f" "${f}.2"
-          done
+      - name: Rename signature files for GitHub Pages
+        if: steps.build.outputs.packages_built == 'true'
+        run: |
+          find repo -maxdepth 2 -name '*.sig' -type f -exec mv {} {}.2 \; 2>/dev/null || true
 
       - name: Prepare Pages artifact
         run: |
