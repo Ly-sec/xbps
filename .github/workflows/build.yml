@@ -254,8 +254,8 @@ jobs:
 
           mkdir -p keys
 
-          # Remove old signatures (cache may have stale ones from previous key)
-          find repo -maxdepth 2 -name '*.sig' -type f -delete 2>/dev/null || true
+          # Remove old signatures; xbps-rindex does not overwrite cached .sig2 files.
+          find repo -maxdepth 2 \( -name '*.sig' -o -name '*.sig2' \) -type f -delete 2>/dev/null || true
 
           if [ -n "$XBPS_PUBKEY" ]; then
             if echo "$XBPS_PUBKEY" | grep -q "^-----BEGIN"; then
