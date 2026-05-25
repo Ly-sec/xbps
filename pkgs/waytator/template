@@ -5,10 +5,20 @@ revision=1
 build_style=meson
 hostmakedepends="pkg-config gettext"
 makedepends="gtk4-devel libadwaita-devel"
-depends="gtk4 libadwaita"
+depends="gtk4 libadwaita jq wl-clipboard"
 short_desc="Wayland image annotation tool"
 maintainer="Ly-sec <void@lysec.dev>"
 license="GPL-3.0-or-later"
 homepage="https://github.com/ItsLemmy/waytator"
 distfiles="https://github.com/ItsLemmy/waytator/archive/refs/tags/v${version}.tar.gz"
 checksum=ffe12c551ad806c1a5510bcebd709ad4fe37eb31f044cd41d319ff3d3c0473ac
+
+do_install() {
+	meson install -C build --destdir "${DESTDIR}"
+	vbin "${FILESDIR}/screenshot-to-waytator.sh"
+}
+
+pkg_install_message() {
+	msg_normal "The script 'screenshot-to-waytator.sh' is installed in /usr/bin.\n"
+	msg_normal "Requires: niri, jq, wl-clipboard, coreutils (sha256sum)\n"
+}
