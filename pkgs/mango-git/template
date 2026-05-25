@@ -1,0 +1,55 @@
+# Template file for 'mango-git'
+# Run ./pkgs/mango-git/update to set version to the latest commit.
+pkgname=mango-git
+version=0.13.1
+revision=1
+build_style=meson
+buildtype=release
+short_desc="Practical and Powerful wayland compositor (dwm but wayland) - git version"
+maintainer="Ly-sec <void@lysec.dev>"
+license="GPL-3.0-only"
+homepage="https://github.com/mangowm/mango"
+
+hostmakedepends="meson ninja pkg-config git wayland-devel"
+
+makedepends="
+ wlroots0.19-devel
+ wayland-devel
+ wayland-protocols
+ libxkbcommon-devel
+ libinput-devel
+ pcre2-devel
+ scenefx-devel
+ pixman-devel
+ cJSON-devel
+ libxcb-devel
+ xcb-util-wm-devel
+"
+
+depends="
+ wlroots0.19
+ wayland
+ libxkbcommon
+ libinput
+ pcre2
+ scenefx
+ pixman
+ cJSON
+"
+
+noverify=yes
+nosource=yes
+
+build_options="xwayland"
+build_options_default="xwayland"
+desc_option_xwayland="Enable Xwayland support"
+
+do_fetch() {
+	git clone https://github.com/mangowm/mango.git ${wrksrc}
+}
+
+configure_args="$(vopt_feature xwayland xwayland)"
+
+post_install() {
+	vlicense LICENSE
+}

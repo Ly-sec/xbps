@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+SHA=$(curl -s "https://api.github.com/repos/mangowm/mango/git/refs/heads/main" \
+  | awk -F'"' '/"sha"/{print $4;exit}' | cut -c1-7)
+
+if [ -z "$SHA" ]; then
+	echo "Failed to resolve commit SHA"
+	exit 1
+fi
+
+PKGDIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -d "$PKGDIR/../../repo" ] && \
+   ls "$PKGDIR/../../repo/mango-git-${SHA}"*.xbps >/dev/null 2>&1; then
+	echo "mango-git $SHA already built, skipping"
+	exit 0
+fi
+
+sed -i "s/^version=.*/version=${SHA}/" "$PKGDIR/template"
+echo "${SHA}"
