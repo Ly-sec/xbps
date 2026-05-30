@@ -1,6 +1,6 @@
 # Template file for 'equibop'
 pkgname=equibop
-version=3.2.0
+version=3.2.1
 revision=1
 archs="x86_64 aarch64"
 wrksrc="Equibop-${version}"
@@ -13,7 +13,7 @@ license="GPL-3.0-only"
 conflicts="equibop-bin"
 nostrip=yes
 distfiles="https://github.com/Equicord/Equibop/archive/refs/tags/v${version}.tar.gz"
-checksum=7592a8fdb9470e5b9b7366f9a1803c6ee605e6f25861e1836041094077e94a9b
+checksum=1446c5e67948fbb834479b75df5ff252dba45b9f0f85b36bd69eadb05e620a13
 
 do_build() {
 	cd "${wrksrc}"
