@@ -1,5 +1,5 @@
 pkgname=lefthook
-version=2.1.8
+version=2.1.9
 revision=1
 build_style=go
 go_import_path="github.com/evilmartians/lefthook/v2"
@@ -10,7 +10,7 @@ homepage="https://github.com/evilmartians/lefthook"
 license="MIT"
 
 distfiles="https://github.com/evilmartians/lefthook/archive/refs/tags/v${version}.tar.gz"
-checksum=1a96af44d352302cc2c184f9a69249525f15a8fd313b170de1d686603d729811
+checksum=33dece7ea494fa723cd1a8488210dab807c1be9d3c92912a0eedbd6406299744
 
 do_install() {
 	install -Dm755 "$GOPATH/bin/lefthook" "$DESTDIR/usr/bin/lefthook"
