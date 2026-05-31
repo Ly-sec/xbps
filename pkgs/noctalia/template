@@ -32,6 +32,8 @@ makedepends="
  sdbus-c++-devel
  polkit-devel
  librsvg-devel
+ libxml2-devel
+ libqcalculate-devel
 "
 
 depends="
