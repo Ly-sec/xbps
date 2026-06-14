@@ -1,0 +1,59 @@
+# Template file for 'noctalia-greeter'
+# Run ./pkgs/noctalia-greeter/update to set version to the latest main commit.
+pkgname=noctalia-greeter
+version=b7ae619
+revision=1
+build_style=meson
+buildtype=release
+short_desc="Minimal login greeter for greetd matching Noctalia Shell"
+maintainer="Noctalia <team@enoctalia.dev>"
+license="MIT"
+homepage="https://github.com/noctalia-dev/noctalia-greeter"
+
+hostmakedepends="meson ninja pkg-config git"
+
+makedepends="
+ wayland-devel
+ wayland-protocols
+ wlroots0.20-devel
+ libepoxy-devel
+ MesaLib-devel
+ libglvnd-devel
+ cairo-devel
+ pango-devel
+ fontconfig-devel
+ freetype-devel
+ harfbuzz-devel
+ libxkbcommon-devel
+ libwebp-devel
+ librsvg-devel
+ glib-devel
+"
+
+depends="
+ greetd
+ dbus
+ wayland
+ wlroots0.20
+ libwebp
+ polkit
+"
+
+noverify=yes
+nosource=yes
+CXXFLAGS+=" -std=c++20"
+
+do_fetch() {
+	git clone https://github.com/noctalia-dev/noctalia-greeter.git --branch main ${wrksrc}
+}
+
+post_install() {
+	vlicense LICENSE
+
+	for bin in noctalia-greeter noctalia-greeter-compositor noctalia-greeter-session \
+		noctalia-greeter-apply-appearance; do
+		if [ ! -x "${DESTDIR}/usr/bin/${bin}" ]; then
+			msg_error "Expected binary /usr/bin/${bin} not found.\n"
+		fi
+	done
+}

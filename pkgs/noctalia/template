@@ -1,14 +1,14 @@
 # Template file for 'noctalia'
-# Run ./pkgs/noctalia/update to set version to the latest v5 commit.
+# Run ./pkgs/noctalia/update to set version to the latest main commit.
 pkgname=noctalia
-version=42b9442
+version=4a2cb7b
 revision=1
 build_style=meson
 buildtype=release
 short_desc="Noctalia desktop shell"
 maintainer="Noctalia <team@enoctalia.dev>"
 license="MIT"
-homepage="https://github.com/noctalia-dev/noctalia-shell"
+homepage="https://github.com/noctalia-dev/noctalia"
 
 hostmakedepends="meson ninja pkg-config git curl"
 
@@ -32,8 +32,8 @@ makedepends="
  sdbus-c++-devel
  polkit-devel
  librsvg-devel
+ libqalculate-devel
  libxml2-devel
- libqcalculate-devel
 "
 
 depends="
@@ -50,7 +50,7 @@ nosource=yes
 CXXFLAGS+=" -std=c++20"
 
 do_fetch() {
-	git clone https://github.com/noctalia-dev/noctalia-shell.git --branch v5 ${wrksrc}
+	git clone https://github.com/noctalia-dev/noctalia.git --branch main ${wrksrc}
 }
 
 post_install() {

@@ -1,0 +1,17 @@
+case "$ACTION" in
+post)
+	echo ""
+	echo "==> noctalia-greeter installed."
+	echo ""
+	echo "    Run system setup once as root:"
+	echo "      sudo /usr/share/noctalia-greeter/setup_greeter_system.sh"
+	echo ""
+	echo "    Then point greetd at the session wrapper, e.g.:"
+	echo "      command = \"/usr/bin/noctalia-greeter-session\""
+	echo "      user = \"_greeter\""
+	echo ""
+	echo "    Print a ready-to-paste greetd config block:"
+	echo "      noctalia-greeter-print-greetd-config"
+	echo ""
+	;;
+esac
