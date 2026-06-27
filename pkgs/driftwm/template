@@ -1,5 +1,5 @@
 pkgname=driftwm
-version=0.12.1
+version=0.13.0
 revision=1
 build_style=cargo
 short_desc="Trackpad-first infinite canvas Wayland compositor"
@@ -10,7 +10,7 @@ depends="libdisplay-info libinput seatd mesa libxkbcommon libudev"
 hostmakedepends="cargo pkg-config libudev-devel libseat-devel libdisplay-info-devel libinput-devel libxkbcommon-devel libgbm-devel"
 
 distfiles="https://github.com/malbiruk/driftwm/archive/refs/tags/v${version}.tar.gz"
-checksum=370b317a07bc37041700f8f0b603f97e0a9e34ba110f24fd8506b593f7f1c0f7
+checksum=c042da8e0f3da407a67eafe422e8b83998134b2dd506b2756fa9475bef71a1fd
 
 post_patch() {
 	# Upstream Cargo.lock is stale for git smithay deps; regenerate before --locked build.
